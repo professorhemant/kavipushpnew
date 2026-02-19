@@ -884,6 +884,31 @@ function kavipushp_render_invoices_enhanced() {
                             </label>
                         </div>
                     </div>
+
+                    <div id="amount-received-group" class="kp-form-group" style="display: none;">
+                        <label><strong><?php _e('Amount Received (₹)', 'kavipushp-bridals'); ?></strong></label>
+                        <input type="number" id="amount_received" value="0" min="0" onchange="updateInvoicePreview()" style="padding: 6px 10px; width: 200px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+
+                    <div id="damages-amount-group" class="kp-form-group" style="display: none;">
+                        <label><strong><?php _e('Damages Amount (₹)', 'kavipushp-bridals'); ?></strong></label>
+                        <input type="number" id="damages_amount" value="0" min="0" onchange="updateInvoicePreview()" style="padding: 6px 10px; width: 200px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+
+                    <div id="set-image-group" class="kp-form-group">
+                        <label><strong><?php _e('Bridal Set Image', 'kavipushp-bridals'); ?></strong></label>
+                        <input type="file" id="set_image_upload" accept="image/*" onchange="handleSetImageUpload(this)" style="padding: 6px 0; display: block;">
+                        <div id="set-image-preview-thumb" style="display:none; margin-top:8px;">
+                            <img id="set-image-thumb" src="" style="max-width:150px; max-height:120px; border:1px solid #ddd; border-radius:4px; display:block;">
+                            <button type="button" onclick="clearSetImage()" style="margin-top:5px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; cursor:pointer; background:#fff; color:#c00; font-size:12px;">Remove Image</button>
+                        </div>
+                    </div>
+
+                    <div id="set-includes-group" class="kp-form-group">
+                        <label><strong><?php _e('Set Includes', 'kavipushp-bridals'); ?></strong></label>
+                        <textarea id="set_includes" rows="3" placeholder="e.g. Necklace, Ear rings, Nath, Bangles..." oninput="updateInvoicePreview()" style="padding: 6px 10px; width: 100%; border: 1px solid #ddd; border-radius: 4px; resize: vertical; box-sizing: border-box; max-width: 500px;"></textarea>
+                    </div>
+
                 </div>
 
                 <!-- Invoice Preview -->
@@ -916,6 +941,15 @@ function kavipushp_render_invoices_enhanced() {
                                 <p style="margin: 3px 0;"><strong><?php _e('Pickup:', 'kavipushp-bridals'); ?></strong> <span id="inv-pickup-date"></span></p>
                                 <p style="margin: 3px 0;"><strong><?php _e('Return:', 'kavipushp-bridals'); ?></strong> <span id="inv-return-date"></span></p>
                             </div>
+                        </div>
+
+                        <div id="inv-set-image-section" style="display:none; text-align:center; margin: 15px 0;">
+                            <img id="inv-set-image" src="" style="max-width:200px; max-height:160px; border:1px solid #ddd; border-radius:6px;">
+                        </div>
+
+                        <div id="inv-set-includes-section" style="display:none; background:#f9f0ff; border:1px solid #e0c8f0; border-radius:6px; padding:12px 15px; margin: 10px 0 15px 0;">
+                            <strong style="color:#7b4fa6;"><?php _e('Set Includes:', 'kavipushp-bridals'); ?></strong>
+                            <span id="inv-set-includes-text" style="color:#333; margin-left:6px;"></span>
                         </div>
 
                         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
@@ -963,6 +997,30 @@ function kavipushp_render_invoices_enhanced() {
             return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
         }
 
+        var kpPaymentStatus = 'all_paid';
+        var kpSetImage = '';
+
+        function handleSetImageUpload(input) {
+            if (input.files && input.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    kpSetImage = e.target.result;
+                    document.getElementById('set-image-thumb').src = kpSetImage;
+                    document.getElementById('set-image-preview-thumb').style.display = 'block';
+                    updateInvoicePreview();
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function clearSetImage() {
+            kpSetImage = '';
+            document.getElementById('set_image_upload').value = '';
+            document.getElementById('set-image-thumb').src = '';
+            document.getElementById('set-image-preview-thumb').style.display = 'none';
+            updateInvoicePreview();
+        }
+
         function getSelectedInvoiceType() {
             var radios = document.querySelectorAll('input[name="invoice_type"]');
             for (var i = 0; i < radios.length; i++) {
@@ -990,13 +1048,17 @@ function kavipushp_render_invoices_enhanced() {
             }
         });
 
-        function getInvoiceConfig(type, rent, bookingAmount) {
+        function getInvoiceConfig(type, rent, bookingAmount, amountReceived, damagesAmount, paymentStatus) {
             var securityDeposit = 2000;
+            amountReceived = amountReceived || 0;
+            damagesAmount = damagesAmount || 0;
+            paymentStatus = paymentStatus || 'all_paid';
             var config = {
                 title: '',
                 prefix: '',
                 rows: [],
                 grandTotal: 0,
+                afterTotalRows: [],
                 footerNote: ''
             };
 
@@ -1018,11 +1080,16 @@ function kavipushp_render_invoices_enhanced() {
                     { label: 'Bridal Set Rent', amount: rent, color: '' }
                 ];
                 if (bookingAmount > 0) {
-                    rows.push({ label: 'Less: Booking Amount Paid', amount: bookingAmount, color: '#e74c3c', isDeduction: true });
+                    rows.push({ label: 'Less: Booking Amount', amount: bookingAmount, color: '#e74c3c', isDeduction: true });
                 }
                 rows.push({ label: 'Security Deposit (Refundable)', amount: securityDeposit, color: '#2980b9' });
                 config.rows = rows;
-                config.grandTotal = rent - bookingAmount;
+                config.grandTotal = rent - bookingAmount + securityDeposit;
+                var balance = config.grandTotal - amountReceived;
+                config.afterTotalRows = [
+                    { label: 'Less: Amount Received', amount: amountReceived, color: '#27ae60', isDeduction: true },
+                    { label: 'Balance Amount', amount: balance, color: '#e74c3c', isBold: true }
+                ];
                 config.footerNote = 'Security deposit of \u20B92,000 will be refunded upon safe return of jewelry.';
             } else if (type === 'final') {
                 config.title = 'FINAL INVOICE';
@@ -1033,10 +1100,21 @@ function kavipushp_render_invoices_enhanced() {
                 if (bookingAmount > 0) {
                     rows.push({ label: 'Less: Booking Amount Paid', amount: bookingAmount, color: '#e74c3c', isDeduction: true });
                 }
-                rows.push({ label: 'Security Deposit (Refunded)', amount: securityDeposit, color: '#27ae60', isInfo: true });
+                rows.push({ label: 'Security Deposit (Refundable)', amount: securityDeposit, color: '#2980b9' });
                 config.rows = rows;
-                config.grandTotal = rent - bookingAmount;
-                config.footerNote = 'Security deposit of \u20B92,000 has been refunded. Thank you for choosing our services!';
+                config.grandTotal = rent - bookingAmount + securityDeposit;
+                var securityRefund = securityDeposit - damagesAmount;
+                var balance = config.grandTotal - securityRefund;
+                var isAllPaid = paymentStatus === 'all_paid';
+                var statusMsg = isAllPaid ? '\u2705 All Clear' : '\u26A0 Pending';
+                config.afterTotalRows = [
+                    { label: 'Less: Security Refund (Security \u2212 Damage Charges)', amount: securityRefund, color: '#27ae60', isDeduction: true },
+                    { label: 'Balance Amount', amount: balance, color: isAllPaid ? '#27ae60' : '#e74c3c', isBold: true },
+                    { label: 'Status', amount: null, statusMsg: statusMsg, isStatus: true }
+                ];
+                config.footerNote = isAllPaid
+                    ? 'All payments cleared. Security deposit refunded. Thank you for choosing our services!'
+                    : 'Payment of \u20B9' + balance.toLocaleString('en-IN') + ' is pending. Please clear dues.';
             }
 
             return config;
@@ -1059,7 +1137,27 @@ function kavipushp_render_invoices_enhanced() {
             var rent = parseFloat(opt.dataset.rent) || 0;
             var bookingAmount = parseFloat(opt.dataset.bookingAmount) || 0;
 
-            var config = getInvoiceConfig(invoiceType, rent, bookingAmount);
+            // Show/hide amount received input (pickup only)
+            var amtReceivedGroup = document.getElementById('amount-received-group');
+            if (invoiceType === 'pickup') {
+                amtReceivedGroup.style.display = 'block';
+            } else {
+                amtReceivedGroup.style.display = 'none';
+                document.getElementById('amount_received').value = 0;
+            }
+            // Show/hide damages amount input (final only)
+            var damagesGroup = document.getElementById('damages-amount-group');
+            if (invoiceType === 'final') {
+                damagesGroup.style.display = 'block';
+            } else {
+                damagesGroup.style.display = 'none';
+                document.getElementById('damages_amount').value = 0;
+                kpPaymentStatus = 'all_paid';
+            }
+            var amountReceived = parseFloat(document.getElementById('amount_received').value) || 0;
+            var damagesAmount = parseFloat(document.getElementById('damages_amount').value) || 0;
+
+            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus);
 
             var invNum = config.prefix + '-' + String(bookingId).padStart(5, '0');
 
@@ -1073,36 +1171,95 @@ function kavipushp_render_invoices_enhanced() {
             document.getElementById('inv-pickup-date').textContent = formatDate(opt.dataset.pickupDate);
             document.getElementById('inv-return-date').textContent = formatDate(opt.dataset.returnDate);
 
-            // Build table body
-            var tbody = document.getElementById('inv-table-body');
-            tbody.innerHTML = '';
+            // Build all non-select rows as HTML string
+            var tbodyHtml = '';
+            var statusRowData = null;
 
             // Set name row
-            var setRow = '<tr>' +
+            tbodyHtml += '<tr>' +
                 '<td style="padding: 10px; border-bottom: 1px solid #eee;">' + (opt.dataset.setName || '') + '</td>' +
                 '<td style="padding: 10px; border-bottom: 1px solid #eee;">' + (opt.dataset.setCode || '') + '</td>' +
                 '<td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;">\u20B9' + rent.toLocaleString('en-IN') + '</td>' +
                 '</tr>';
-            tbody.innerHTML += setRow;
 
             // Additional rows based on invoice type
             config.rows.forEach(function(row, index) {
-                if (index === 0) return; // Skip first row (Bridal Set Rent already shown)
+                if (index === 0) return;
                 var colorStyle = row.color ? ' color: ' + row.color + ';' : '';
                 var amountText = row.isDeduction ? '- \u20B9' + row.amount.toLocaleString('en-IN') : '\u20B9' + row.amount.toLocaleString('en-IN');
-                var tr = '<tr>' +
+                tbodyHtml += '<tr>' +
                     '<td style="padding: 10px; border-bottom: 1px solid #eee;' + colorStyle + '" colspan="2">' + row.label + '</td>' +
                     '<td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;' + colorStyle + '">' + amountText + '</td>' +
                     '</tr>';
-                tbody.innerHTML += tr;
             });
 
             // Grand total row
-            var totalRow = '<tr style="font-weight: bold; font-size: 16px;">' +
+            tbodyHtml += '<tr style="font-weight: bold; font-size: 16px;">' +
                 '<td style="padding: 12px; border-top: 2px solid #c9a86c;" colspan="2">Grand Total</td>' +
                 '<td style="padding: 12px; text-align: right; border-top: 2px solid #c9a86c;">\u20B9' + config.grandTotal.toLocaleString('en-IN') + '</td>' +
                 '</tr>';
-            tbody.innerHTML += totalRow;
+
+            // After-total rows — collect status row separately, render rest as HTML
+            if (config.afterTotalRows && config.afterTotalRows.length > 0) {
+                config.afterTotalRows.forEach(function(row) {
+                    if (row.isStatus) {
+                        statusRowData = row; // will be appended via DOM after innerHTML is set
+                        return;
+                    }
+                    var colorStyle = row.color ? ' color: ' + row.color + ';' : '';
+                    var boldStyle = row.isBold ? ' font-weight: bold; font-size: 15px;' : '';
+                    var amountText = row.isDeduction ? '- \u20B9' + row.amount.toLocaleString('en-IN') : '\u20B9' + row.amount.toLocaleString('en-IN');
+                    tbodyHtml += '<tr>' +
+                        '<td style="padding: 10px; border-bottom: 1px solid #eee;' + colorStyle + boldStyle + '" colspan="2">' + row.label + '</td>' +
+                        '<td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;' + colorStyle + boldStyle + '">' + amountText + '</td>' +
+                        '</tr>';
+                });
+            }
+
+            // Set tbody HTML (no <select> inside, safe to use innerHTML)
+            var tbody = document.getElementById('inv-table-body');
+            tbody.innerHTML = tbodyHtml;
+
+            // Append status row with <select> via DOM methods (avoids tbody innerHTML parsing issues)
+            if (statusRowData) {
+                var isAllClear = statusRowData.statusMsg.indexOf('All Clear') !== -1;
+                var bgColor = isAllClear ? '#e8f5e9' : '#fff3e0';
+                var txtColor = isAllClear ? '#27ae60' : '#e67e22';
+
+                var tr = document.createElement('tr');
+
+                var td1 = document.createElement('td');
+                td1.colSpan = 2;
+                td1.style.cssText = 'padding: 10px; border-bottom: 1px solid #eee; font-weight: bold; color: ' + txtColor + ';';
+                td1.textContent = 'Payment Status';
+
+                var td2 = document.createElement('td');
+                td2.style.cssText = 'padding: 10px; border-bottom: 1px solid #eee; text-align: right;';
+
+                var sel = document.createElement('select');
+                sel.style.cssText = 'padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; background: ' + bgColor + '; color: ' + txtColor + '; font-weight: bold; cursor: pointer;';
+                sel.addEventListener('change', function() {
+                    kpPaymentStatus = this.value;
+                    updateInvoicePreview();
+                });
+
+                var o1 = document.createElement('option');
+                o1.value = 'all_paid';
+                o1.textContent = '\u2705 All Clear';
+                o1.selected = isAllClear;
+
+                var o2 = document.createElement('option');
+                o2.value = 'pending';
+                o2.textContent = '\u26A0 Pending';
+                o2.selected = !isAllClear;
+
+                sel.appendChild(o1);
+                sel.appendChild(o2);
+                td2.appendChild(sel);
+                tr.appendChild(td1);
+                tr.appendChild(td2);
+                tbody.appendChild(tr);
+            }
 
             // Customization text
             var customization = opt.dataset.customization || '';
@@ -1111,6 +1268,23 @@ function kavipushp_render_invoices_enhanced() {
                 document.getElementById('inv-customization').style.display = 'block';
             } else {
                 document.getElementById('inv-customization').style.display = 'none';
+            }
+
+            // Set image
+            if (kpSetImage) {
+                document.getElementById('inv-set-image').src = kpSetImage;
+                document.getElementById('inv-set-image-section').style.display = 'block';
+            } else {
+                document.getElementById('inv-set-image-section').style.display = 'none';
+            }
+
+            // Set Includes
+            var setIncludes = document.getElementById('set_includes').value.trim();
+            if (setIncludes) {
+                document.getElementById('inv-set-includes-text').textContent = setIncludes;
+                document.getElementById('inv-set-includes-section').style.display = 'block';
+            } else {
+                document.getElementById('inv-set-includes-section').style.display = 'none';
             }
 
             document.getElementById('inv-status').innerHTML = '<span style="background: #c9a86c; color: #fff; padding: 5px 15px; border-radius: 4px;">' + config.title + '</span>';
@@ -1139,8 +1313,11 @@ function kavipushp_render_invoices_enhanced() {
             var invDate = opt.dataset.date || '';
 
             var customization = opt.dataset.customization || '';
+            var setIncludes = document.getElementById('set_includes').value.trim();
 
-            var config = getInvoiceConfig(invoiceType, rent, bookingAmount);
+            var amountReceived = parseFloat(document.getElementById('amount_received').value) || 0;
+            var damagesAmount = parseFloat(document.getElementById('damages_amount').value) || 0;
+            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus);
             var invNum = config.prefix + '-' + String(opt.value).padStart(5, '0');
 
             // Build table rows for print
@@ -1152,6 +1329,19 @@ function kavipushp_render_invoices_enhanced() {
                 tableRows += '<tr><td colspan="2"' + colorStyle + '>' + row.label + '</td><td style="text-align:right;' + (row.color ? 'color:' + row.color + ';' : '') + '">' + amountText + '</td></tr>';
             });
             tableRows += '<tr class="total-row"><td colspan="2">Grand Total</td><td style="text-align:right;">\u20B9' + config.grandTotal.toLocaleString('en-IN') + '</td></tr>';
+            if (config.afterTotalRows && config.afterTotalRows.length > 0) {
+                config.afterTotalRows.forEach(function(row) {
+                    if (row.isStatus) {
+                        var isAllClear = row.statusMsg.indexOf('All Clear') !== -1;
+                        tableRows += '<tr><td colspan="3" style="text-align:center; font-weight:bold; font-size:16px; padding:12px; background:' + (isAllClear ? '#e8f5e9; color:#27ae60;' : '#fff3e0; color:#e67e22;') + '">' + row.statusMsg + '</td></tr>';
+                        return;
+                    }
+                    var colorStyle = row.color ? ' color:' + row.color + ';' : '';
+                    var boldStyle = row.isBold ? ' font-weight:bold;' : '';
+                    var amountText = row.isDeduction ? '- \u20B9' + row.amount.toLocaleString('en-IN') : '\u20B9' + row.amount.toLocaleString('en-IN');
+                    tableRows += '<tr><td colspan="2" style="' + colorStyle + boldStyle + '">' + row.label + '</td><td style="text-align:right;' + colorStyle + boldStyle + '">' + amountText + '</td></tr>';
+                });
+            }
 
             var businessName = '<?php echo esc_js(get_option("kavipushp_business_name", "Kavipushp Jewels Rental")); ?>';
             var businessAddress = '<?php echo esc_js(get_option("kavipushp_business_address", "")); ?>';
@@ -1191,6 +1381,8 @@ function kavipushp_render_invoices_enhanced() {
                 '<p><strong>Pickup:</strong> ' + pickupDate + '</p>' +
                 '<p><strong>Return:</strong> ' + returnDate + '</p></div>' +
                 '</div>' +
+                (kpSetImage ? '<div style="text-align:center;margin:15px 0;"><img src="' + kpSetImage + '" style="max-width:200px;max-height:160px;border:1px solid #ddd;border-radius:6px;"></div>' : '') +
+                (setIncludes ? '<div style="background:#f9f0ff;border:1px solid #e0c8f0;border-radius:6px;padding:12px 15px;margin:10px 0 15px 0;"><strong style="color:#7b4fa6;">Set Includes:</strong> <span style="color:#333;margin-left:6px;">' + setIncludes + '</span></div>' : '') +
                 '<table><thead><tr><th>Item</th><th>Set Code</th><th style="text-align:right;">Amount</th></tr></thead>' +
                 '<tbody>' + tableRows + '</tbody></table>' +
                 (customization.trim() ? '<div style="background:#fff8e1;border:1px solid #f0e68c;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#c9a86c;">Customization:</strong> ' + customization + '</div>' : '') +
@@ -1213,7 +1405,9 @@ function kavipushp_render_invoices_enhanced() {
             var invoiceType = getSelectedInvoiceType();
             var rent = parseFloat(opt.dataset.rent) || 0;
             var bookingAmount = parseFloat(opt.dataset.bookingAmount) || 0;
-            var config = getInvoiceConfig(invoiceType, rent, bookingAmount);
+            var amountReceived = parseFloat(document.getElementById('amount_received').value) || 0;
+            var damagesAmount = parseFloat(document.getElementById('damages_amount').value) || 0;
+            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus);
             var invNum = config.prefix + '-' + String(opt.value).padStart(5, '0');
 
             var data = {
