@@ -1,0 +1,30 @@
+# WordPress uploads (use Railway volume instead)
+wp-content/uploads/
+
+# WordPress cache
+wp-content/cache/
+wp-content/upgrade/
+
+# Debug log
+wp-content/debug.log
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.*
+
+# Node modules (if any)
+node_modules/
+
+# Composer vendor (if any)
+vendor/
