@@ -18,13 +18,21 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Environment / secrets
 .env
 .env.*
 
-# Node modules (if any)
+# Node modules
 node_modules/
+dist/
+dist-ssr/
+*.local
 
-# Composer vendor (if any)
+# Composer vendor
 vendor/
