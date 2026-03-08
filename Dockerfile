@@ -1,5 +1,5 @@
 FROM php:8.2-apache
-ARG CACHEBUST=2
+ARG CACHEBUST=3
 
 # Install system dependencies + PHP extensions
 RUN apt-get update && apt-get install -y \
@@ -10,12 +10,12 @@ RUN apt-get update && apt-get install -y \
         gd mysqli pdo_mysql xml zip opcache intl mbstring exif \
     && rm -rf /var/lib/apt/lists/*
 
-# Fix MPM conflict — forcibly remove conflicting MPM load files, keep only prefork
-RUN rm -f /etc/apache2/mods-enabled/mpm_event.load \
-           /etc/apache2/mods-enabled/mpm_event.conf \
-           /etc/apache2/mods-enabled/mpm_worker.load \
-           /etc/apache2/mods-enabled/mpm_worker.conf \
-    && a2enmod mpm_prefork 2>/dev/null || true
+# Fix MPM conflict — remove ALL mpm symlinks and re-create only prefork
+RUN cd /etc/apache2/mods-enabled \
+    && rm -f mpm_event.load mpm_event.conf mpm_worker.load mpm_worker.conf mpm_prefork.load mpm_prefork.conf \
+    && ln -sf ../mods-available/mpm_prefork.load mpm_prefork.load \
+    && ln -sf ../mods-available/mpm_prefork.conf mpm_prefork.conf \
+    && echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
 # Enable Apache modules
 RUN a2enmod rewrite headers expires
