@@ -9,6 +9,10 @@ RUN apt-get update && apt-get install -y \
         gd mysqli pdo_mysql xml zip opcache intl mbstring exif \
     && rm -rf /var/lib/apt/lists/*
 
+# Fix MPM conflict — disable event/worker, enable prefork (required for mod_php)
+RUN a2dismod mpm_event mpm_worker 2>/dev/null || true \
+    && a2enmod mpm_prefork
+
 # Enable Apache modules
 RUN a2enmod rewrite headers expires
 
