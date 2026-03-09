@@ -10,6 +10,14 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Private site — redirect all non-logged-in visitors to login page
+add_action('template_redirect', function () {
+    if (!is_user_logged_in()) {
+        wp_redirect(wp_login_url(get_permalink()));
+        exit;
+    }
+});
+
 // Theme Constants
 define('KAVIPUSHP_VERSION', '1.0.0');
 define('KAVIPUSHP_DIR', get_template_directory());
