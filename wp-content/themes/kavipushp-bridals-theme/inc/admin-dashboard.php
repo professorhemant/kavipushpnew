@@ -90,6 +90,15 @@ function kavipushp_admin_menu() {
 
     add_submenu_page(
         'kavipushp-dashboard',
+        __('Roles & Permissions', 'kavipushp-bridals'),
+        __('Roles & Permissions', 'kavipushp-bridals'),
+        'manage_options',
+        'kavipushp-roles',
+        'kavipushp_render_roles_permissions'
+    );
+
+    add_submenu_page(
+        'kavipushp-dashboard',
         __('Sample Data', 'kavipushp-bridals'),
         __('Sample Data', 'kavipushp-bridals'),
         'manage_options',
@@ -1231,3 +1240,211 @@ function kavipushp_view_saved_invoice() {
     wp_send_json_success($invoice);
 }
 add_action('wp_ajax_kavipushp_view_saved_invoice', 'kavipushp_view_saved_invoice');
+
+/**
+ * Roles & Permissions Page
+ */
+function kavipushp_render_roles_permissions() {
+    // Define the modules and their permission types
+    $modules = array(
+        'dashboard'  => 'Dashboard',
+        'customers'  => 'Customers',
+        'inventory'  => 'Jewelry Inventory',
+        'bookings'   => 'Bookings',
+        'invoices'   => 'Invoices',
+        'settings'   => 'Settings',
+    );
+    $perms = array('view', 'add', 'edit', 'delete');
+
+    // Default roles with default permissions
+    $default_roles = array(
+        'admin'   => array('label' => 'Admin',   'color' => '#6366f1'),
+        'manager' => array('label' => 'Manager', 'color' => '#0ea5e9'),
+        'staff'   => array('label' => 'Staff',   'color' => '#10b981'),
+        'viewer'  => array('label' => 'Viewer',  'color' => '#f59e0b'),
+    );
+
+    $default_perms = array(
+        'admin'   => array_fill_keys(array_keys($modules), array('view'=>1,'add'=>1,'edit'=>1,'delete'=>1)),
+        'manager' => array(
+            'dashboard' => array('view'=>1,'add'=>0,'edit'=>0,'delete'=>0),
+            'customers' => array('view'=>1,'add'=>1,'edit'=>1,'delete'=>0),
+            'inventory' => array('view'=>1,'add'=>1,'edit'=>1,'delete'=>0),
+            'bookings'  => array('view'=>1,'add'=>1,'edit'=>1,'delete'=>0),
+            'invoices'  => array('view'=>1,'add'=>1,'edit'=>1,'delete'=>0),
+            'settings'  => array('view'=>0,'add'=>0,'edit'=>0,'delete'=>0),
+        ),
+        'staff'   => array(
+            'dashboard' => array('view'=>1,'add'=>0,'edit'=>0,'delete'=>0),
+            'customers' => array('view'=>1,'add'=>1,'edit'=>0,'delete'=>0),
+            'inventory' => array('view'=>1,'add'=>0,'edit'=>0,'delete'=>0),
+            'bookings'  => array('view'=>1,'add'=>1,'edit'=>0,'delete'=>0),
+            'invoices'  => array('view'=>1,'add'=>0,'edit'=>0,'delete'=>0),
+            'settings'  => array('view'=>0,'add'=>0,'edit'=>0,'delete'=>0),
+        ),
+        'viewer'  => array_fill_keys(array_keys($modules), array('view'=>1,'add'=>0,'edit'=>0,'delete'=>0)),
+    );
+
+    // Load saved permissions
+    $saved = get_option('kavipushp_role_permissions', $default_perms);
+    $role_labels = get_option('kavipushp_role_labels', array_combine(
+        array_keys($default_roles),
+        array_column($default_roles, 'label')
+    ));
+
+    // Handle save
+    $saved_msg = '';
+    if (isset($_POST['save_roles']) && check_admin_referer('kavipushp_roles')) {
+        $new_perms = array();
+        foreach (array_keys($default_roles) as $role) {
+            foreach (array_keys($modules) as $mod) {
+                foreach ($perms as $p) {
+                    $new_perms[$role][$mod][$p] = isset($_POST['perm'][$role][$mod][$p]) ? 1 : 0;
+                }
+            }
+        }
+        update_option('kavipushp_role_permissions', $new_perms);
+        $saved = $new_perms;
+        $saved_msg = '<div class="notice notice-success is-dismissible"><p>Roles &amp; Permissions saved successfully!</p></div>';
+    }
+
+    // Handle user role assignment
+    $assign_msg = '';
+    if (isset($_POST['assign_role']) && check_admin_referer('kavipushp_assign_role')) {
+        $user_id  = intval($_POST['user_id']);
+        $new_role = sanitize_key($_POST['kp_role']);
+        if ($user_id && array_key_exists($new_role, $default_roles)) {
+            update_user_meta($user_id, 'kavipushp_role', $new_role);
+            $assign_msg = '<div class="notice notice-success is-dismissible"><p>User role updated successfully!</p></div>';
+        }
+    }
+
+    $all_users = get_users(array('fields' => array('ID', 'display_name', 'user_email')));
+    ?>
+    <div class="kavipushp-admin-wrap">
+        <div class="kp-page-title">
+            <h1>Roles &amp; Permissions</h1>
+            <p>Control what each role can view and manage across the system.</p>
+        </div>
+
+        <?php echo $saved_msg; echo $assign_msg; ?>
+
+        <!-- Permissions Matrix -->
+        <div class="kp-card" style="margin-bottom:24px;">
+            <div class="kp-card-header" style="display:flex;align-items:center;gap:12px;">
+                <h2 style="margin:0;">Permission Matrix</h2>
+            </div>
+            <div class="kp-card-body" style="overflow-x:auto;">
+                <form method="post">
+                    <?php wp_nonce_field('kavipushp_roles'); ?>
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr style="background:#f8f9fa;">
+                                <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;min-width:140px;">Module</th>
+                                <th style="padding:10px 8px;text-align:center;border-bottom:2px solid #e5e7eb;min-width:60px;">Action</th>
+                                <?php foreach ($default_roles as $rkey => $rdata) : ?>
+                                    <th style="padding:10px 14px;text-align:center;border-bottom:2px solid #e5e7eb;">
+                                        <span style="display:inline-block;padding:3px 10px;border-radius:12px;background:<?php echo esc_attr($rdata['color']); ?>20;color:<?php echo esc_attr($rdata['color']); ?>;font-weight:600;">
+                                            <?php echo esc_html($rdata['label']); ?>
+                                        </span>
+                                    </th>
+                                <?php endforeach; ?>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($modules as $mkey => $mlabel) : ?>
+                                <?php foreach ($perms as $pidx => $p) : ?>
+                                    <tr style="background:<?php echo ($pidx % 2 === 0) ? '#fff' : '#fafafa'; ?>;border-bottom:1px solid #f0f0f0;">
+                                        <?php if ($pidx === 0) : ?>
+                                            <td rowspan="4" style="padding:10px 14px;font-weight:600;color:#1e293b;border-right:1px solid #e5e7eb;vertical-align:middle;">
+                                                <?php echo esc_html($mlabel); ?>
+                                            </td>
+                                        <?php endif; ?>
+                                        <td style="padding:6px 8px;text-align:center;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-right:1px solid #f0f0f0;">
+                                            <?php echo esc_html(ucfirst($p)); ?>
+                                        </td>
+                                        <?php foreach (array_keys($default_roles) as $rkey) : ?>
+                                            <td style="padding:6px 14px;text-align:center;">
+                                                <input type="checkbox"
+                                                    name="perm[<?php echo esc_attr($rkey); ?>][<?php echo esc_attr($mkey); ?>][<?php echo esc_attr($p); ?>]"
+                                                    value="1"
+                                                    <?php checked(1, isset($saved[$rkey][$mkey][$p]) ? $saved[$rkey][$mkey][$p] : 0); ?>
+                                                    <?php if ($rkey === 'admin') echo 'disabled checked'; ?>
+                                                    style="width:16px;height:16px;cursor:pointer;">
+                                                <?php if ($rkey === 'admin') : ?>
+                                                    <input type="hidden" name="perm[admin][<?php echo esc_attr($mkey); ?>][<?php echo esc_attr($p); ?>]" value="1">
+                                                <?php endif; ?>
+                                            </td>
+                                        <?php endforeach; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <div style="margin-top:18px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;">
+                        <button type="submit" name="save_roles" class="button button-primary" style="background:#6366f1;border-color:#6366f1;padding:6px 20px;">
+                            Save Permissions
+                        </button>
+                        <span style="color:#64748b;font-size:12px;">* Admin always has full access and cannot be restricted.</span>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Assign Role to Users -->
+        <div class="kp-card">
+            <div class="kp-card-header">
+                <h2 style="margin:0;">Assign Roles to Users</h2>
+            </div>
+            <div class="kp-card-body">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <thead>
+                        <tr style="background:#f8f9fa;">
+                            <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;">User</th>
+                            <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;">Email</th>
+                            <th style="padding:10px 14px;text-align:center;border-bottom:2px solid #e5e7eb;">Current Role</th>
+                            <th style="padding:10px 14px;text-align:center;border-bottom:2px solid #e5e7eb;">Change Role</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($all_users as $u) :
+                            $current_role = get_user_meta($u->ID, 'kavipushp_role', true) ?: 'admin';
+                            $role_info = isset($default_roles[$current_role]) ? $default_roles[$current_role] : $default_roles['viewer'];
+                        ?>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:10px 14px;font-weight:500;">
+                                <?php echo esc_html($u->display_name); ?>
+                            </td>
+                            <td style="padding:10px 14px;color:#64748b;">
+                                <?php echo esc_html($u->user_email); ?>
+                            </td>
+                            <td style="padding:10px 14px;text-align:center;">
+                                <span style="display:inline-block;padding:3px 10px;border-radius:12px;background:<?php echo esc_attr($role_info['color']); ?>20;color:<?php echo esc_attr($role_info['color']); ?>;font-weight:600;font-size:12px;">
+                                    <?php echo esc_html($role_info['label']); ?>
+                                </span>
+                            </td>
+                            <td style="padding:10px 14px;text-align:center;">
+                                <form method="post" style="display:inline-flex;gap:8px;align-items:center;">
+                                    <?php wp_nonce_field('kavipushp_assign_role'); ?>
+                                    <input type="hidden" name="user_id" value="<?php echo esc_attr($u->ID); ?>">
+                                    <select name="kp_role" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+                                        <?php foreach ($default_roles as $rkey => $rdata) : ?>
+                                            <option value="<?php echo esc_attr($rkey); ?>" <?php selected($current_role, $rkey); ?>>
+                                                <?php echo esc_html($rdata['label']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <button type="submit" name="assign_role" class="button button-small" style="background:#6366f1;color:#fff;border-color:#6366f1;font-size:12px;">
+                                        Assign
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <?php
+}
