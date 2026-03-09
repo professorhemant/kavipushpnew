@@ -1,0 +1,46 @@
+# WordPress core — provided by the base Docker image
+wp-admin/
+wp-includes/
+wp-activate.php
+wp-blog-header.php
+wp-comments-post.php
+wp-cron.php
+wp-links-opml.php
+wp-load.php
+wp-login.php
+wp-mail.php
+wp-settings.php
+wp-signup.php
+wp-trackback.php
+xmlrpc.php
+index.php
+license.txt
+readme.html
+
+# React/Vite app — not used in Docker build
+src/
+public/
+node_modules/
+dist/
+bun.lockb
+package.json
+package-lock.json
+postcss.config.js
+tailwind.config.ts
+tsconfig*.json
+vite.config.ts
+eslint.config.js
+components.json
+index.html
+supabase/
+bridal_sets_template.csv
+
+# Git
+.git/
+.gitignore
+
+# Local config
+.railway/
+
+# Memory dir
+memory/

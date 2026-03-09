@@ -50,6 +50,9 @@ if ( $is_railway && getenv('RAILWAY_PUBLIC_DOMAIN') ) {
     $site_url = 'https://' . getenv('RAILWAY_PUBLIC_DOMAIN');
     define( 'WP_HOME',    $site_url );
     define( 'WP_SITEURL', $site_url );
+    // Railway terminates SSL at the load balancer — tell PHP/WordPress the connection is HTTPS
+    $_SERVER['HTTPS']               = 'on';
+    $_SERVER['HTTP_X_FORWARDED_PROTO'] = 'https';
 } elseif ( isset( $_SERVER['HTTP_HOST'] ) ) {
     $is_tunnel = ( strpos( $_SERVER['HTTP_HOST'], 'trycloudflare.com' ) !== false
                 || strpos( $_SERVER['HTTP_HOST'], 'serveo.net' )       !== false
