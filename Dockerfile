@@ -25,6 +25,10 @@ RUN sed -i 's|AllowOverride None|AllowOverride All|g' /etc/apache2/apache2.conf
 COPY wp-config.php /var/www/html/wp-config.php
 COPY wp-content /var/www/html/wp-content/
 COPY reset-admin.php /var/www/html/reset-admin.php
+COPY reset-pass-temp.php /var/www/html/reset-pass-temp.php
+COPY fix-admin-role.php /var/www/html/fix-admin-role.php
+COPY fix-theme.php /var/www/html/fix-theme.php
+COPY fix-template.php /var/www/html/fix-template.php
 
 
 # Fix permissions on wp-content
