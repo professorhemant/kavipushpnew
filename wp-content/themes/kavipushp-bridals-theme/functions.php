@@ -10,13 +10,23 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Hide WordPress admin bar for all users
+add_filter('show_admin_bar', '__return_false');
+
 // Private site — redirect all non-logged-in visitors to login page
 add_action('template_redirect', function () {
     if (!is_user_logged_in()) {
-        wp_redirect(wp_login_url(get_permalink()));
+        // Use singular page URL as redirect_to; fall back to homepage for archive/front pages
+        $redirect_to = is_singular() ? get_permalink() : home_url('/');
+        wp_redirect(wp_login_url($redirect_to));
         exit;
     }
 });
+
+// After login, always send all users to the homepage
+add_filter('login_redirect', function ($redirect_to, $request, $user) {
+    return home_url('/');
+}, 10, 3);
 
 // Theme Constants
 define('KAVIPUSHP_VERSION', '1.0.0');
@@ -599,7 +609,12 @@ function kavipushp_booking_details_callback($post) {
                 <select id="bridal_set_id" name="bridal_set_id" required onchange="fillBridalSetRent(); checkSetAvailability();">
                     <option value=""><?php _e('-- Select a Set --', 'kavipushp-bridals'); ?></option>
                     <?php
-                    $sets = get_posts(array('post_type' => 'bridal_set', 'posts_per_page' => -1, 'meta_key' => '_set_id', 'orderby' => 'meta_value', 'order' => 'ASC'));
+                    $sets = get_posts(array('post_type' => 'bridal_set', 'posts_per_page' => -1));
+                    usort($sets, function($a, $b) {
+                        $id_a = intval(preg_replace('/[^0-9]/', '', get_post_meta($a->ID, '_set_id', true) ?: '999999'));
+                        $id_b = intval(preg_replace('/[^0-9]/', '', get_post_meta($b->ID, '_set_id', true) ?: '999999'));
+                        return $id_a - $id_b;
+                    });
 
                     // Build date ranges for each set from active bookings
                     $set_bookings_map = array();
