@@ -40,6 +40,20 @@ add_action('admin_init', function () {
             exit;
         }
     }
+
+    // Handle invoice (booking) delete
+    if (isset($_GET['page']) && $_GET['page'] === 'kavipushp-invoices'
+        && isset($_GET['action']) && $_GET['action'] === 'delete'
+        && isset($_GET['id'])
+    ) {
+        $booking_id = intval($_GET['id']);
+        check_admin_referer('delete_invoice_' . $booking_id);
+        if ($booking_id) {
+            wp_delete_post($booking_id, true);
+            wp_redirect(admin_url('admin.php?page=kavipushp-invoices&deleted=1'));
+            exit;
+        }
+    }
 });
 
 /**
@@ -858,6 +872,13 @@ function kavipushp_render_invoices_enhanced() {
                                 data-rent="<?php echo esc_attr(get_post_meta($b->ID, '_total_amount', true)); ?>"
                                 data-booking-amount="<?php echo esc_attr(get_post_meta($b->ID, '_booking_amount', true)); ?>"
                                 data-customization="<?php echo esc_attr(get_post_meta($b->ID, '_booking_notes', true)); ?>"
+                                data-nath="<?php echo esc_attr(get_post_meta($b->ID, '_nath', true)); ?>"
+                                data-maang-teeka="<?php echo esc_attr(get_post_meta($b->ID, '_maang_teeka', true)); ?>"
+                                data-ring="<?php echo esc_attr(get_post_meta($b->ID, '_ring', true)); ?>"
+                                data-matha-patti="<?php echo esc_attr(get_post_meta($b->ID, '_matha_patti', true)); ?>"
+                                data-sheesh-patti="<?php echo esc_attr(get_post_meta($b->ID, '_sheesh_patti', true)); ?>"
+                                data-hath-phool="<?php echo esc_attr(get_post_meta($b->ID, '_hath_phool', true)); ?>"
+                                data-pasa="<?php echo esc_attr(get_post_meta($b->ID, '_pasa', true)); ?>"
                                 data-status="<?php echo esc_attr($b_status); ?>"
                                 data-date="<?php echo esc_attr($b_date); ?>"
                                 <?php selected($invoice_booking_id, $b->ID); ?>>
@@ -904,10 +925,7 @@ function kavipushp_render_invoices_enhanced() {
                         </div>
                     </div>
 
-                    <div id="set-includes-group" class="kp-form-group">
-                        <label><strong><?php _e('Set Includes', 'kavipushp-bridals'); ?></strong></label>
-                        <textarea id="set_includes" rows="3" placeholder="e.g. Necklace, Ear rings, Nath, Bangles..." oninput="updateInvoicePreview()" style="padding: 6px 10px; width: 100%; border: 1px solid #ddd; border-radius: 4px; resize: vertical; box-sizing: border-box; max-width: 500px;"></textarea>
-                    </div>
+                    <textarea id="set_includes" style="display:none;"></textarea>
 
                 </div>
 
@@ -1144,6 +1162,10 @@ function kavipushp_render_invoices_enhanced() {
         }
 
         function updateInvoicePreview() {
+            // Always clear the save message when preview updates
+            var msgDiv = document.getElementById('invoice-save-msg');
+            if (msgDiv) { msgDiv.style.display = 'none'; msgDiv.innerHTML = ''; }
+
             var sel = document.getElementById('invoice_booking_select');
             var bookingId = sel.value;
 
@@ -1301,8 +1323,25 @@ function kavipushp_render_invoices_enhanced() {
                 document.getElementById('inv-set-image-section').style.display = 'none';
             }
 
-            // Set Includes
-            var setIncludes = document.getElementById('set_includes').value.trim();
+            // Set Includes — auto-build from booking jewelry fields
+            var jewelryLabels = [
+                { key: 'nath',        label: 'Nath' },
+                { key: 'maangTeeka',  label: 'Maang Teeka' },
+                { key: 'ring',        label: 'Ring' },
+                { key: 'mathaPatti',  label: 'Matha Patti' },
+                { key: 'sheeshPatti', label: 'Sheesh Patti' },
+                { key: 'hathPhool',   label: 'Hath Phool' },
+                { key: 'pasa',        label: 'Pasa' }
+            ];
+            var autoIncludes = [];
+            jewelryLabels.forEach(function(j) {
+                var val = opt.dataset[j.key] || '';
+                if (val) autoIncludes.push(j.label + ': ' + val);
+            });
+            var autoIncludesText = autoIncludes.join(' | ');
+            // Merge with any manual text in the textarea
+            var manualText = document.getElementById('set_includes').value.trim();
+            var setIncludes = autoIncludesText || manualText;
             if (setIncludes) {
                 document.getElementById('inv-set-includes-text').textContent = setIncludes;
                 document.getElementById('inv-set-includes-section').style.display = 'block';
@@ -1336,7 +1375,22 @@ function kavipushp_render_invoices_enhanced() {
             var invDate = opt.dataset.date || '';
 
             var customization = opt.dataset.customization || '';
-            var setIncludes = document.getElementById('set_includes').value.trim();
+            // Auto-build Set Includes from booking jewelry fields
+            var _jewelryLabels = [
+                { key: 'nath',        label: 'Nath' },
+                { key: 'maangTeeka',  label: 'Maang Teeka' },
+                { key: 'ring',        label: 'Ring' },
+                { key: 'mathaPatti',  label: 'Matha Patti' },
+                { key: 'sheeshPatti', label: 'Sheesh Patti' },
+                { key: 'hathPhool',   label: 'Hath Phool' },
+                { key: 'pasa',        label: 'Pasa' }
+            ];
+            var _autoIncludes = [];
+            _jewelryLabels.forEach(function(j) {
+                var val = opt.dataset[j.key] || '';
+                if (val) _autoIncludes.push(j.label + ': ' + val);
+            });
+            var setIncludes = _autoIncludes.join(' | ') || document.getElementById('set_includes').value.trim();
 
             var amountReceived = parseFloat(document.getElementById('amount_received').value) || 0;
             var damagesAmount = parseFloat(document.getElementById('damages_amount').value) || 0;
@@ -1375,21 +1429,23 @@ function kavipushp_render_invoices_enhanced() {
             printWindow.document.write(
                 '<!DOCTYPE html><html><head><title>' + config.title + ' ' + invNum + '</title>' +
                 '<style>' +
-                'body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }' +
-                '.header { text-align: center; border-bottom: 2px solid #c9a86c; padding-bottom: 20px; margin-bottom: 30px; }' +
-                '.header h1 { color: #1a1f36; margin: 0 0 8px 0; font-size: 26px; }' +
-                '.header p { color: #666; margin: 0; font-size: 13px; line-height: 1.6; }' +
-                '.header .contact-line { margin-top: 5px; font-size: 12px; }' +
-                '.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; }' +
-                '.info-block h3 { color: #c9a86c; margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; }' +
-                '.info-block p { margin: 5px 0; color: #333; }' +
-                'table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }' +
-                'th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }' +
+                '@page { size: A4; margin: 10mm 12mm; }' +
+                'html, body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; width: 210mm; max-width: 210mm; }' +
+                '.header { text-align: center; border-bottom: 2px solid #c9a86c; padding-bottom: 8px; margin-bottom: 10px; }' +
+                '.header h1 { color: #1a1f36; margin: 0 0 3px 0; font-size: 18px; }' +
+                '.header p { color: #666; margin: 0; font-size: 11px; line-height: 1.4; }' +
+                '.header .contact-line { margin-top: 3px; font-size: 10px; }' +
+                '.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 10px; }' +
+                '.info-block h3 { color: #c9a86c; margin: 0 0 4px 0; font-size: 11px; text-transform: uppercase; }' +
+                '.info-block p { margin: 2px 0; color: #333; font-size: 11px; }' +
+                'table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }' +
+                'th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #ddd; font-size: 11px; }' +
                 'th { background: #f5f5f5; font-weight: 600; }' +
-                '.total-row { font-weight: bold; font-size: 18px; }' +
+                '.total-row { font-weight: bold; font-size: 13px; }' +
                 '.total-row td { border-top: 2px solid #c9a86c; }' +
-                '.footer { text-align: center; color: #666; font-size: 12px; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; }' +
-                '@media print { body { padding: 20px; } }' +
+                '.footer { text-align: center; color: #666; font-size: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; }' +
+                'ol { margin: 4px 0; padding-left: 16px; font-size: 10px; color: #555; line-height: 1.6; }' +
+                '@media print { html, body { width: 210mm; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }' +
                 '</style></head><body>' +
                 '<div class="header"><h1>' + businessName + '</h1>' +
                 '<p>' + businessAddress + '</p>' +
@@ -1409,9 +1465,9 @@ function kavipushp_render_invoices_enhanced() {
                 '<table><thead><tr><th>Item</th><th>Set Code</th><th style="text-align:right;">Amount</th></tr></thead>' +
                 '<tbody>' + tableRows + '</tbody></table>' +
                 (customization.trim() ? '<div style="background:#fff8e1;border:1px solid #f0e68c;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#c9a86c;">Customization:</strong> ' + customization + '</div>' : '') +
-                '<div style="margin:20px 0;padding:15px;border:1px solid #ddd;border-radius:6px;background:#fafafa;">' +
-                '<h5 style="margin:0 0 10px;color:#1a1f36;">Kavipushp Jewels \u2013 Terms &amp; Conditions</h5>' +
-                '<ol style="margin:0;padding-left:18px;font-size:12px;color:#555;line-height:1.8;">' +
+                '<div style="margin:8px 0;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fafafa;">' +
+                '<h5 style="margin:0 0 5px;color:#1a1f36;font-size:11px;">Kavipushp Jewels \u2013 Terms &amp; Conditions</h5>' +
+                '<ol style="margin:0;padding-left:16px;font-size:10px;color:#555;line-height:1.6;">' +
                 '<li>Jewellery is rented only for the period mentioned; late return will be charged per day.</li>' +
                 '<li>A refundable security deposit may be collected and returned after condition check.</li>' +
                 '<li>Any damage, loss, or missing parts will be charged as per repair or replacement value.</li>' +
@@ -1419,8 +1475,8 @@ function kavipushp_render_invoices_enhanced() {
                 '<li>Customer must provide valid ID proof and is responsible for the safety of the jewellery during the rental period.</li>' +
                 '<li>All disputes are subject to local jurisdiction.</li>' +
                 '</ol>' +
-                '<p style="margin:10px 0 0;font-size:12px;font-weight:bold;color:#333;">Accepted and Agreed By:</p>' +
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:30px;">' +
+                '<p style="margin:6px 0 0;font-size:11px;font-weight:bold;color:#333;">Accepted and Agreed By:</p>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:15px;">' +
                 '<div><div style="border-top:1px solid #333;width:100%;margin-bottom:6px;"></div><p style="margin:0;font-size:12px;color:#555;">Customer Signature &amp; Date</p></div>' +
                 '<div><div style="border-top:1px solid #333;width:100%;margin-bottom:6px;"></div><p style="margin:0;font-size:12px;color:#555;">Authorized Signatory</p></div>' +
                 '</div>' +
@@ -1577,9 +1633,9 @@ function kavipushp_render_invoices_enhanced() {
                                 <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices&action=generate&booking_id=' . $booking->ID); ?>" class="button button-small">
                                     <i class="dashicons dashicons-visibility"></i> <?php _e('View', 'kavipushp-bridals'); ?>
                                 </a>
-                                <button class="button button-small kp-delete-btn">
+                                <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=kavipushp-invoices&action=delete&id=' . $booking->ID), 'delete_invoice_' . $booking->ID); ?>" class="button button-small kp-delete-btn" onclick="return confirm('<?php esc_attr_e('Are you sure you want to delete this invoice/booking?', 'kavipushp-bridals'); ?>')">
                                     <i class="dashicons dashicons-trash"></i>
-                                </button>
+                                </a>
                             </div>
                         </div>
                         <div class="kp-invoice-details">
