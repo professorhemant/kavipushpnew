@@ -828,7 +828,7 @@ function kavipushp_render_invoices_enhanced() {
                 <p><?php _e('Track and manage all rental invoices', 'kavipushp-bridals'); ?></p>
             </div>
             <div class="kp-page-actions">
-                <?php if ($action === 'generate'): ?>
+                <?php if ($action === 'generate' || $action === 'view_saved'): ?>
                 <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices'); ?>" class="button">
                     <i class="dashicons dashicons-arrow-left-alt"></i> <?php _e('Back to Invoices', 'kavipushp-bridals'); ?>
                 </a>
@@ -843,7 +843,121 @@ function kavipushp_render_invoices_enhanced() {
             </div>
         </div>
 
-        <?php if ($action === 'generate'): ?>
+        <?php if ($action === 'view_saved'):
+        // View a saved invoice from wp_kavipushp_invoices table
+        global $wpdb;
+        $inv_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+        $inv = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}kavipushp_invoices WHERE id = %d", $inv_id));
+        if ($inv):
+            $type_labels = array('booking' => __('Booking Invoice', 'kavipushp-bridals'), 'pickup' => __('Pickup Invoice', 'kavipushp-bridals'), 'final' => __('Final Invoice', 'kavipushp-bridals'));
+            $type_label = isset($type_labels[$inv->invoice_type]) ? $type_labels[$inv->invoice_type] : ucfirst($inv->invoice_type);
+            $biz_name    = get_option('kavipushp_business_name', 'Kavipushp Jewels Rental');
+            $biz_address = get_option('kavipushp_business_address', '');
+            $biz_phone   = get_option('kavipushp_business_phone', '');
+            $biz_email   = get_option('kavipushp_business_email', '');
+        ?>
+        <div class="kp-card" id="saved-invoice-view">
+            <div class="kp-card-body">
+                <div style="background:#fff; border:1px solid #ddd; border-radius:8px; padding:30px; max-width:800px; margin:0 auto;" id="printable-invoice">
+                    <div style="text-align:center; border-bottom:2px solid #c9a86c; padding-bottom:15px; margin-bottom:20px;">
+                        <h2 style="margin:0; color:#1a1f36;"><?php echo esc_html($biz_name); ?></h2>
+                        <p style="color:#666; margin:5px 0 0; font-size:13px; line-height:1.6;">
+                            <?php echo esc_html($biz_address); ?><br>
+                            <?php echo esc_html($biz_phone); ?> &nbsp;|&nbsp; <?php echo esc_html($biz_email); ?>
+                        </p>
+                    </div>
+
+                    <h3 style="text-align:center; color:#1a1f36;"><?php echo esc_html($type_label); ?></h3>
+                    <p style="text-align:center; color:#666;"><?php echo esc_html($inv->invoice_number); ?> &nbsp;&bull;&nbsp; <?php echo date('d/m/Y', strtotime($inv->created_at)); ?></p>
+
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:20px 0;">
+                        <div>
+                            <h4 style="color:#c9a86c; margin:0 0 8px;"><?php _e('Bill To', 'kavipushp-bridals'); ?></h4>
+                            <p style="margin:3px 0; font-weight:bold;"><?php echo esc_html($inv->customer_name); ?></p>
+                            <p style="margin:3px 0;"><?php echo esc_html($inv->customer_phone); ?></p>
+                            <?php if ($inv->customer_email): ?><p style="margin:3px 0;"><?php echo esc_html($inv->customer_email); ?></p><?php endif; ?>
+                            <?php if ($inv->customer_address): ?><p style="margin:3px 0;"><?php echo esc_html($inv->customer_address); ?></p><?php endif; ?>
+                        </div>
+                        <div>
+                            <h4 style="color:#c9a86c; margin:0 0 8px;"><?php _e('Rental Period', 'kavipushp-bridals'); ?></h4>
+                            <?php if ($inv->function_date && $inv->function_date !== '0000-00-00'): ?><p style="margin:3px 0;"><strong><?php _e('Function:', 'kavipushp-bridals'); ?></strong> <?php echo date('d/m/Y', strtotime($inv->function_date)); ?></p><?php endif; ?>
+                            <?php if ($inv->pickup_date && $inv->pickup_date !== '0000-00-00'): ?><p style="margin:3px 0;"><strong><?php _e('Pickup:', 'kavipushp-bridals'); ?></strong> <?php echo date('d/m/Y', strtotime($inv->pickup_date)); ?></p><?php endif; ?>
+                            <?php if ($inv->return_date && $inv->return_date !== '0000-00-00'): ?><p style="margin:3px 0;"><strong><?php _e('Return:', 'kavipushp-bridals'); ?></strong> <?php echo date('d/m/Y', strtotime($inv->return_date)); ?></p><?php endif; ?>
+                        </div>
+                    </div>
+
+                    <table style="width:100%; border-collapse:collapse; margin:20px 0;">
+                        <thead>
+                            <tr style="background:#f0f0f0;">
+                                <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;"><?php _e('Item', 'kavipushp-bridals'); ?></th>
+                                <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;"><?php _e('Set Code', 'kavipushp-bridals'); ?></th>
+                                <th style="padding:10px; text-align:right; border-bottom:2px solid #ddd;"><?php _e('Amount', 'kavipushp-bridals'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding:10px; border-bottom:1px solid #eee;"><?php echo esc_html($inv->set_name ?: __('Bridal Jewellery Set', 'kavipushp-bridals')); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee;"><?php echo esc_html($inv->set_code ?: 'N/A'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right;">₹<?php echo number_format($inv->rent_amount, 2); ?></td>
+                            </tr>
+                            <?php if (floatval($inv->booking_amount) > 0): ?>
+                            <tr>
+                                <td style="padding:10px; border-bottom:1px solid #eee; color:#e74c3c;" colspan="2"><?php _e('Less: Booking Amount Paid', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; color:#e74c3c;">- ₹<?php echo number_format($inv->booking_amount, 2); ?></td>
+                            </tr>
+                            <?php endif; ?>
+                            <?php if (floatval($inv->security_deposit) > 0): ?>
+                            <tr>
+                                <td style="padding:10px; border-bottom:1px solid #eee;" colspan="2"><?php _e('Security Deposit (Refundable)', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right;">₹<?php echo number_format($inv->security_deposit, 2); ?></td>
+                            </tr>
+                            <?php endif; ?>
+                            <tr style="background:#f9f9f9; font-weight:bold;">
+                                <td style="padding:12px 10px;" colspan="2"><?php _e('Grand Total', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:12px 10px; text-align:right; color:#c9a86c; font-size:16px;">₹<?php echo number_format($inv->grand_total, 2); ?></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <?php if ($inv->customization_notes): ?>
+                    <div style="background:#fff8e1; border:1px solid #f0e68c; border-radius:6px; padding:12px 15px; margin:15px 0;">
+                        <strong style="color:#c9a86c;"><?php _e('Customization:', 'kavipushp-bridals'); ?></strong>
+                        <span style="color:#333; margin-left:5px;"><?php echo esc_html($inv->customization_notes); ?></span>
+                    </div>
+                    <?php endif; ?>
+
+                    <div style="margin:20px 0; padding:15px; border:1px solid #ddd; border-radius:6px; background:#fafafa;">
+                        <h5 style="margin:0 0 10px; color:#1a1f36;"><?php _e('Kavipushp Jewels – Terms & Conditions', 'kavipushp-bridals'); ?></h5>
+                        <ol style="margin:0; padding-left:18px; font-size:12px; color:#555; line-height:1.8;">
+                            <li><?php _e('Jewellery is rented only for the period mentioned; late return will be charged per day.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('A refundable security deposit may be collected and returned after condition check.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Any damage, loss, or missing parts will be charged as per repair or replacement value.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Full payment must be made before delivery; advance/booking amount is non-refundable.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Customer must provide valid ID proof and is responsible for the safety of the jewellery during the rental period.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('All disputes are subject to local jurisdiction.', 'kavipushp-bridals'); ?></li>
+                        </ol>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:30px; margin-top:30px;">
+                            <div><div style="border-top:1px solid #333; width:100%; margin-bottom:6px;"></div><p style="margin:0; font-size:12px; color:#555;"><?php _e('Customer Signature & Date', 'kavipushp-bridals'); ?></p></div>
+                            <div><div style="border-top:1px solid #333; width:100%; margin-bottom:6px;"></div><p style="margin:0; font-size:12px; color:#555;"><?php _e('Authorized Signatory', 'kavipushp-bridals'); ?></p></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top:20px; display:flex; gap:10px;">
+                    <button class="button button-primary button-large" onclick="window.print()">
+                        <i class="dashicons dashicons-printer"></i> <?php _e('Print Invoice', 'kavipushp-bridals'); ?>
+                    </button>
+                    <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices'); ?>" class="button button-large">
+                        <i class="dashicons dashicons-arrow-left-alt"></i> <?php _e('Back to Invoices', 'kavipushp-bridals'); ?>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <?php else: ?>
+        <div class="notice notice-error"><p><?php _e('Invoice not found.', 'kavipushp-bridals'); ?></p></div>
+        <?php endif; ?>
+
+        <?php elseif ($action === 'generate'): ?>
         <!-- Generate Invoice Form -->
         <?php
         // Get all bookings for selection
@@ -1624,7 +1738,7 @@ function kavipushp_render_invoices_enhanced() {
                             <td><strong>₹<?php echo number_format($inv->grand_total); ?></strong></td>
                             <td><?php echo date('d/m/Y', strtotime($inv->created_at)); ?></td>
                             <td>
-                                <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices&action=generate&booking_id=' . $inv->booking_id); ?>" class="button button-small"><?php _e('View', 'kavipushp-bridals'); ?></a>
+                                <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices&action=view_saved&id=' . $inv->id); ?>" class="button button-small"><?php _e('View', 'kavipushp-bridals'); ?></a>
                                 <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=kavipushp-invoices&action=delete_saved&id=' . $inv->id), 'delete_saved_invoice_' . $inv->id); ?>" class="button button-small kp-delete-btn" onclick="return confirm('<?php esc_attr_e('Delete this saved invoice?', 'kavipushp-bridals'); ?>')" style="color:#e74c3c;">
                                     <i class="dashicons dashicons-trash"></i>
                                 </a>
