@@ -1081,6 +1081,7 @@ function kavipushp_create_tables() {
         security_deposit decimal(10,2) DEFAULT 0,
         grand_total decimal(10,2) DEFAULT 0,
         customization_notes text,
+        stylist_name varchar(255),
         status varchar(20) DEFAULT 'generated',
         created_at datetime DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
@@ -1200,6 +1201,7 @@ function kavipushp_save_invoice() {
         'security_deposit'    => floatval($_POST['security_deposit'] ?? 0),
         'grand_total'         => floatval($_POST['grand_total'] ?? 0),
         'customization_notes' => sanitize_textarea_field($_POST['customization_notes'] ?? ''),
+        'stylist_name'        => sanitize_text_field($_POST['stylist_name'] ?? ''),
         'status'              => 'generated',
     );
 

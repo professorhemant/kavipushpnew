@@ -925,6 +925,12 @@ function kavipushp_render_invoices_enhanced() {
                         <span style="color:#333; margin-left:5px;"><?php echo esc_html($inv->customization_notes); ?></span>
                     </div>
                     <?php endif; ?>
+                    <?php if (!empty($inv->stylist_name)): ?>
+                    <div style="background:#f0f7ff; border:1px solid #c8dff8; border-radius:6px; padding:12px 15px; margin:15px 0;">
+                        <strong style="color:#2980b9;"><i class="dashicons dashicons-admin-users" style="font-size:14px; vertical-align:middle;"></i> <?php _e('Stylist Who Attended:', 'kavipushp-bridals'); ?></strong>
+                        <span style="color:#333; margin-left:5px;"><?php echo esc_html($inv->stylist_name); ?></span>
+                    </div>
+                    <?php endif; ?>
 
                     <div style="margin:20px 0; padding:15px; border:1px solid #ddd; border-radius:6px; background:#fafafa;">
                         <h5 style="margin:0 0 10px; color:#1a1f36;"><?php _e('Kavipushp Jewels – Terms & Conditions', 'kavipushp-bridals'); ?></h5>
@@ -1001,6 +1007,7 @@ function kavipushp_render_invoices_enhanced() {
                                 data-rent="<?php echo esc_attr(get_post_meta($b->ID, '_total_amount', true)); ?>"
                                 data-booking-amount="<?php echo esc_attr(get_post_meta($b->ID, '_booking_amount', true)); ?>"
                                 data-customization="<?php echo esc_attr(get_post_meta($b->ID, '_booking_notes', true)); ?>"
+                                data-stylist="<?php echo esc_attr(get_post_meta($b->ID, '_stylist_attended', true)); ?>"
                                 data-nath="<?php echo esc_attr(get_post_meta($b->ID, '_nath', true)); ?>"
                                 data-maang-teeka="<?php echo esc_attr(get_post_meta($b->ID, '_maang_teeka', true)); ?>"
                                 data-ring="<?php echo esc_attr(get_post_meta($b->ID, '_ring', true)); ?>"
@@ -1114,6 +1121,10 @@ function kavipushp_render_invoices_enhanced() {
                         <div id="inv-customization" style="display: none; background: #fff8e1; border: 1px solid #f0e68c; border-radius: 6px; padding: 12px 15px; margin: 15px 0;">
                             <strong style="color: #c9a86c;"><i class="dashicons dashicons-edit" style="font-size: 14px;"></i> <?php _e('Customization:', 'kavipushp-bridals'); ?></strong>
                             <span id="inv-customization-text" style="color: #333; margin-left: 5px;"></span>
+                        </div>
+                        <div id="inv-stylist" style="display: none; background: #f0f7ff; border: 1px solid #c8dff8; border-radius: 6px; padding: 12px 15px; margin: 15px 0;">
+                            <strong style="color: #2980b9;"><i class="dashicons dashicons-admin-users" style="font-size: 14px;"></i> <?php _e('Stylist Who Attended:', 'kavipushp-bridals'); ?></strong>
+                            <span id="inv-stylist-text" style="color: #333; margin-left: 5px;"></span>
                         </div>
 
                         <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 6px; background: #fafafa;">
@@ -1444,6 +1455,15 @@ function kavipushp_render_invoices_enhanced() {
                 document.getElementById('inv-customization').style.display = 'none';
             }
 
+            // Stylist
+            var stylist = opt.dataset.stylist || '';
+            if (stylist.trim()) {
+                document.getElementById('inv-stylist-text').textContent = stylist;
+                document.getElementById('inv-stylist').style.display = 'block';
+            } else {
+                document.getElementById('inv-stylist').style.display = 'none';
+            }
+
             // Set image
             if (kpSetImage) {
                 document.getElementById('inv-set-image').src = kpSetImage;
@@ -1504,6 +1524,7 @@ function kavipushp_render_invoices_enhanced() {
             var invDate = opt.dataset.date || '';
 
             var customization = opt.dataset.customization || '';
+            var stylist = opt.dataset.stylist || '';
             // Auto-build Set Includes from booking jewelry fields
             var _jewelryLabels = [
                 { key: 'nath',        label: 'Nath' },
@@ -1594,6 +1615,7 @@ function kavipushp_render_invoices_enhanced() {
                 '<table><thead><tr><th>Item</th><th>Set Code</th><th style="text-align:right;">Amount</th></tr></thead>' +
                 '<tbody>' + tableRows + '</tbody></table>' +
                 (customization.trim() ? '<div style="background:#fff8e1;border:1px solid #f0e68c;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#c9a86c;">Customization:</strong> ' + customization + '</div>' : '') +
+                (stylist.trim() ? '<div style="background:#f0f7ff;border:1px solid #c8dff8;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#2980b9;">Stylist Who Attended:</strong> ' + stylist + '</div>' : '') +
                 '<div style="margin:8px 0;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fafafa;">' +
                 '<h5 style="margin:0 0 5px;color:#1a1f36;font-size:11px;">Kavipushp Jewels \u2013 Terms &amp; Conditions</h5>' +
                 '<ol style="margin:0;padding-left:16px;font-size:10px;color:#555;line-height:1.6;">' +
@@ -1653,7 +1675,8 @@ function kavipushp_render_invoices_enhanced() {
                 booking_amount: bookingAmount,
                 security_deposit: (invoiceType === 'booking') ? 0 : 2000,
                 grand_total: config.grandTotal,
-                customization_notes: opt.dataset.customization || ''
+                customization_notes: opt.dataset.customization || '',
+                stylist_name: opt.dataset.stylist || ''
             };
 
             var msgDiv = document.getElementById('invoice-save-msg');
