@@ -54,6 +54,21 @@ add_action('admin_init', function () {
             exit;
         }
     }
+
+    // Handle saved invoice delete (from wp_kavipushp_invoices table)
+    if (isset($_GET['page']) && $_GET['page'] === 'kavipushp-invoices'
+        && isset($_GET['action']) && $_GET['action'] === 'delete_saved'
+        && isset($_GET['id'])
+    ) {
+        $inv_id = intval($_GET['id']);
+        check_admin_referer('delete_saved_invoice_' . $inv_id);
+        if ($inv_id) {
+            global $wpdb;
+            $wpdb->delete($wpdb->prefix . 'kavipushp_invoices', array('id' => $inv_id));
+            wp_redirect(admin_url('admin.php?page=kavipushp-invoices&deleted=1'));
+            exit;
+        }
+    }
 });
 
 /**
@@ -1562,6 +1577,71 @@ function kavipushp_render_invoices_enhanced() {
         </script>
 
         <?php else: ?>
+
+        <?php
+        // Saved Invoices from wp_kavipushp_invoices table
+        global $wpdb;
+        $inv_table = $wpdb->prefix . 'kavipushp_invoices';
+        $saved_invoices = array();
+        $saved_count = 0;
+        if ($wpdb->get_var("SHOW TABLES LIKE '$inv_table'") === $inv_table) {
+            $saved_invoices = $wpdb->get_results("SELECT * FROM $inv_table ORDER BY created_at DESC");
+            $saved_count = count($saved_invoices);
+        }
+        ?>
+
+        <div class="kp-card" style="margin-bottom: 24px;">
+            <div class="kp-card-header">
+                <h2><i class="dashicons dashicons-media-text"></i> <?php printf(__('Saved Invoices (%d)', 'kavipushp-bridals'), $saved_count); ?></h2>
+            </div>
+            <div class="kp-card-body">
+                <?php if (!empty($saved_invoices)): ?>
+                <div style="overflow-x:auto;">
+                <table class="wp-list-table widefat fixed striped" style="min-width:600px;">
+                    <thead>
+                        <tr>
+                            <th><?php _e('Invoice #', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Type', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Customer', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Phone', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Grand Total', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Date', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Action', 'kavipushp-bridals'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($saved_invoices as $inv):
+                            $type_labels = array('booking' => 'Booking', 'pickup' => 'Pickup', 'final' => 'Final');
+                            $type_label = isset($type_labels[$inv->invoice_type]) ? $type_labels[$inv->invoice_type] : ucfirst($inv->invoice_type);
+                            $type_colors = array('booking' => '#3498db', 'pickup' => '#e67e22', 'final' => '#27ae60');
+                            $type_color = isset($type_colors[$inv->invoice_type]) ? $type_colors[$inv->invoice_type] : '#666';
+                        ?>
+                        <tr>
+                            <td><strong><?php echo esc_html($inv->invoice_number); ?></strong></td>
+                            <td><span style="background:<?php echo $type_color; ?>; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px;"><?php echo esc_html($type_label); ?></span></td>
+                            <td><?php echo esc_html($inv->customer_name); ?></td>
+                            <td><?php echo esc_html($inv->customer_phone); ?></td>
+                            <td><strong>₹<?php echo number_format($inv->grand_total); ?></strong></td>
+                            <td><?php echo date('d/m/Y', strtotime($inv->created_at)); ?></td>
+                            <td>
+                                <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices&action=generate&booking_id=' . $inv->booking_id); ?>" class="button button-small"><?php _e('View', 'kavipushp-bridals'); ?></a>
+                                <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=kavipushp-invoices&action=delete_saved&id=' . $inv->id), 'delete_saved_invoice_' . $inv->id); ?>" class="button button-small kp-delete-btn" onclick="return confirm('<?php esc_attr_e('Delete this saved invoice?', 'kavipushp-bridals'); ?>')" style="color:#e74c3c;">
+                                    <i class="dashicons dashicons-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php else: ?>
+                <div style="text-align:center; padding:20px; color:#999;">
+                    <i class="dashicons dashicons-media-text" style="font-size:36px; width:36px; height:36px;"></i>
+                    <p><?php _e('No saved invoices yet. Generate and save invoices using the Generate Invoice button.', 'kavipushp-bridals'); ?></p>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
 
         <?php
         $bookings = get_posts(array(
