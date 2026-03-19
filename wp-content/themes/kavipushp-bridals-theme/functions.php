@@ -319,6 +319,11 @@ function kavipushp_bridal_set_details_callback($post) {
     $set_id = get_post_meta($post->ID, '_set_id', true);
     $availability = get_post_meta($post->ID, '_availability', true);
     $includes = get_post_meta($post->ID, '_set_includes', true);
+    $nath = get_post_meta($post->ID, '_nath', true);
+    $teeka = get_post_meta($post->ID, '_teeka', true);
+    $matha_patti = get_post_meta($post->ID, '_matha_patti', true);
+    $sheesh_patti = get_post_meta($post->ID, '_sheesh_patti', true);
+    $hath_phool = get_post_meta($post->ID, '_hath_phool', true);
     $weight = get_post_meta($post->ID, '_weight', true);
     $material = get_post_meta($post->ID, '_material', true);
     ?>
@@ -360,6 +365,44 @@ function kavipushp_bridal_set_details_callback($post) {
             <td>
                 <textarea id="set_includes" name="set_includes" rows="4" class="large-text"><?php echo esc_textarea($includes); ?></textarea>
                 <p class="description"><?php _e('List items included in the set (e.g., Necklace, Earrings, Maang Tikka, Bangles)', 'kavipushp-bridals'); ?></p>
+            </td>
+        </tr>
+        <tr>
+            <th colspan="2"><h4 style="margin:0; padding: 8px 0; border-bottom: 1px solid #ddd;"><?php _e('Jewelry Items in This Set', 'kavipushp-bridals'); ?></h4></th>
+        </tr>
+        <tr>
+            <th><label for="nath"><?php _e('Nath', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <input type="text" id="nath" name="nath" value="<?php echo esc_attr($nath); ?>" class="regular-text" placeholder="e.g., Gold Nath #N01" />
+                <p class="description"><?php _e('Nath item name/code included in this set', 'kavipushp-bridals'); ?></p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="teeka"><?php _e('Teeka', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <input type="text" id="teeka" name="teeka" value="<?php echo esc_attr($teeka); ?>" class="regular-text" placeholder="e.g., Kundan Teeka #T01" />
+                <p class="description"><?php _e('Teeka item name/code included in this set', 'kavipushp-bridals'); ?></p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="matha_patti"><?php _e('Matha Patti', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <input type="text" id="matha_patti" name="matha_patti" value="<?php echo esc_attr($matha_patti); ?>" class="regular-text" placeholder="e.g., Polki Matha Patti #MP01" />
+                <p class="description"><?php _e('Matha Patti item name/code included in this set', 'kavipushp-bridals'); ?></p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="sheesh_patti"><?php _e('Sheesh Patti', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <input type="text" id="sheesh_patti" name="sheesh_patti" value="<?php echo esc_attr($sheesh_patti); ?>" class="regular-text" placeholder="e.g., Meenakari Sheesh Patti #SP01" />
+                <p class="description"><?php _e('Sheesh Patti item name/code included in this set', 'kavipushp-bridals'); ?></p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="hath_phool"><?php _e('Hath Phool', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <input type="text" id="hath_phool" name="hath_phool" value="<?php echo esc_attr($hath_phool); ?>" class="regular-text" placeholder="e.g., Gold Hath Phool #HP01" />
+                <p class="description"><?php _e('Hath Phool item name/code included in this set', 'kavipushp-bridals'); ?></p>
             </td>
         </tr>
         <tr>
@@ -473,6 +516,11 @@ function kavipushp_save_bridal_set_meta($post_id) {
         'deposit_amount' => '_deposit_amount',
         'availability'   => '_availability',
         'set_includes'   => '_set_includes',
+        'nath'           => '_nath',
+        'teeka'          => '_teeka',
+        'matha_patti'    => '_matha_patti',
+        'sheesh_patti'   => '_sheesh_patti',
+        'hath_phool'     => '_hath_phool',
         'weight'         => '_weight',
         'material'       => '_material',
         'gallery_images' => '_gallery_images',
@@ -524,11 +572,14 @@ function kavipushp_booking_details_callback($post) {
     $booking_amount = get_post_meta($post->ID, '_booking_amount', true);
     $deposit_paid = get_post_meta($post->ID, '_deposit_paid', true);
     $notes = get_post_meta($post->ID, '_booking_notes', true);
+    $stylist = get_post_meta($post->ID, '_stylist_attended', true);
     $nath = get_post_meta($post->ID, '_nath', true);
-    $teeka = get_post_meta($post->ID, '_teeka', true);
+    $maang_teeka = get_post_meta($post->ID, '_maang_teeka', true);
+    $ring = get_post_meta($post->ID, '_ring', true);
     $matha_patti = get_post_meta($post->ID, '_matha_patti', true);
     $sheesh_patti = get_post_meta($post->ID, '_sheesh_patti', true);
     $hath_phool = get_post_meta($post->ID, '_hath_phool', true);
+    $pasa = get_post_meta($post->ID, '_pasa', true);
 
     // Get all customers from database
     global $wpdb;
@@ -647,9 +698,23 @@ function kavipushp_booking_details_callback($post) {
                         $set_code = get_post_meta($set->ID, '_set_id', true);
                         $rental_price = get_post_meta($set->ID, '_rental_price', true);
                         $bookings_json = isset($set_bookings_map[$set->ID]) ? json_encode($set_bookings_map[$set->ID]) : '[]';
+                        $set_nath         = get_post_meta($set->ID, '_nath', true);
+                        $set_teeka        = get_post_meta($set->ID, '_teeka', true);
+                        $set_matha_patti  = get_post_meta($set->ID, '_matha_patti', true);
+                        $set_sheesh_patti = get_post_meta($set->ID, '_sheesh_patti', true);
+                        $set_hath_phool   = get_post_meta($set->ID, '_hath_phool', true);
 
                         $display = ($set_code ? $set_code . ' - ' : '') . $set->post_title . ' - ₹' . number_format($rental_price) . '/day';
-                        echo '<option value="' . esc_attr($set->ID) . '" data-price="' . esc_attr($rental_price) . '" data-bookings="' . esc_attr($bookings_json) . '" ' . selected($bridal_set_id, $set->ID, false) . '>' . esc_html($display) . '</option>';
+                        echo '<option value="' . esc_attr($set->ID) . '"'
+                            . ' data-price="' . esc_attr($rental_price) . '"'
+                            . ' data-bookings="' . esc_attr($bookings_json) . '"'
+                            . ' data-nath="' . esc_attr($set_nath) . '"'
+                            . ' data-teeka="' . esc_attr($set_teeka) . '"'
+                            . ' data-matha-patti="' . esc_attr($set_matha_patti) . '"'
+                            . ' data-sheesh-patti="' . esc_attr($set_sheesh_patti) . '"'
+                            . ' data-hath-phool="' . esc_attr($set_hath_phool) . '"'
+                            . ' ' . selected($bridal_set_id, $set->ID, false) . '>'
+                            . esc_html($display) . '</option>';
                     }
                     ?>
                 </select>
@@ -657,39 +722,153 @@ function kavipushp_booking_details_callback($post) {
             </td>
         </tr>
         <tr>
-            <td colspan="2">
-                <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; padding: 4px 0;">
-                    <div>
-                        <label for="nath" style="display:block; font-weight:600; margin-bottom:4px;"><?php _e('Nath', 'kavipushp-bridals'); ?></label>
-                        <select id="nath" name="nath">
-                            <option value=""><?php _e('-- Select Nath --', 'kavipushp-bridals'); ?></option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="teeka" style="display:block; font-weight:600; margin-bottom:4px;"><?php _e('Teeka', 'kavipushp-bridals'); ?></label>
-                        <select id="teeka" name="teeka">
-                            <option value=""><?php _e('-- Select Teeka --', 'kavipushp-bridals'); ?></option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="matha_patti" style="display:block; font-weight:600; margin-bottom:4px;"><?php _e('Matha Patti', 'kavipushp-bridals'); ?></label>
-                        <select id="matha_patti" name="matha_patti">
-                            <option value=""><?php _e('-- Select Matha Patti --', 'kavipushp-bridals'); ?></option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="sheesh_patti" style="display:block; font-weight:600; margin-bottom:4px;"><?php _e('Sheesh Patti', 'kavipushp-bridals'); ?></label>
-                        <select id="sheesh_patti" name="sheesh_patti">
-                            <option value=""><?php _e('-- Select Sheesh Patti --', 'kavipushp-bridals'); ?></option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="hath_phool" style="display:block; font-weight:600; margin-bottom:4px;"><?php _e('Hath Phool', 'kavipushp-bridals'); ?></label>
-                        <select id="hath_phool" name="hath_phool">
-                            <option value=""><?php _e('-- Select Hath Phool --', 'kavipushp-bridals'); ?></option>
-                        </select>
-                    </div>
-                </div>
+            <th><label for="nath"><?php _e('Nath', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <select id="nath" name="nath" style="min-width:200px;">
+                    <option value="">-- Select Nath --</option>
+                    <option value="SABYA NATH" <?php selected($nath, 'SABYA NATH'); ?>>SABYA NATH</option>
+                    <option value="KATERINAN KAIF NATH" <?php selected($nath, 'KATERINAN KAIF NATH'); ?>>KATERINAN KAIF NATH</option>
+                    <option value="MAM WALI NATH" <?php selected($nath, 'MAM WALI NATH'); ?>>MAM WALI NATH</option>
+                    <option value="TULIKA NATH" <?php selected($nath, 'TULIKA NATH'); ?>>TULIKA NATH</option>
+                    <option value="SIMPLE KUNDAN NATH" <?php selected($nath, 'SIMPLE KUNDAN NATH'); ?>>SIMPLE KUNDAN NATH</option>
+                    <option value="PIERCING NATH" <?php selected($nath, 'PIERCING NATH'); ?>>PIERCING NATH</option>
+                    <option value="CZ NATH HEAVY" <?php selected($nath, 'CZ NATH HEAVY'); ?>>CZ NATH HEAVY</option>
+                    <option value="RAD NATH" <?php selected($nath, 'RAD NATH'); ?>>RAD NATH</option>
+                    <option value="HEAVY RAJWADI NATH" <?php selected($nath, 'HEAVY RAJWADI NATH'); ?>>HEAVY RAJWADI NATH</option>
+                    <option value="AHMD NATH" <?php selected($nath, 'AHMD NATH'); ?>>AHMD NATH</option>
+                    <option value="VIDYOTMA NATH" <?php selected($nath, 'VIDYOTMA NATH'); ?>>VIDYOTMA NATH</option>
+                    <option value="ANTIQUE NATH" <?php selected($nath, 'ANTIQUE NATH'); ?>>ANTIQUE NATH</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="maang_teeka"><?php _e('Maang Teeka', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <select id="maang_teeka" name="maang_teeka" style="min-width:200px;">
+                    <option value="">-- Select Maang Teeka --</option>
+                    <option value="DC KUNDAN MAANG TEEKA" <?php selected($maang_teeka, 'DC KUNDAN MAANG TEEKA'); ?>>DC KUNDAN MAANG TEEKA</option>
+                    <option value="COPPER MAANG TEEKA" <?php selected($maang_teeka, 'COPPER MAANG TEEKA'); ?>>COPPER MAANG TEEKA</option>
+                    <option value="JAIPURI MAANG TEEKA" <?php selected($maang_teeka, 'JAIPURI MAANG TEEKA'); ?>>JAIPURI MAANG TEEKA</option>
+                    <option value="AHMEDABADI MAANG TEEKA" <?php selected($maang_teeka, 'AHMEDABADI MAANG TEEKA'); ?>>AHMEDABADI MAANG TEEKA</option>
+                    <option value="POLKI MAANG TEEKA" <?php selected($maang_teeka, 'POLKI MAANG TEEKA'); ?>>POLKI MAANG TEEKA</option>
+                    <option value="ANTIQUE MAANG TEEKA" <?php selected($maang_teeka, 'ANTIQUE MAANG TEEKA'); ?>>ANTIQUE MAANG TEEKA</option>
+                    <option value="GREEN MEENA MAANG TEEKA" <?php selected($maang_teeka, 'GREEN MEENA MAANG TEEKA'); ?>>GREEN MEENA MAANG TEEKA</option>
+                    <option value="KATHAK MAANG TEEKA" <?php selected($maang_teeka, 'KATHAK MAANG TEEKA'); ?>>KATHAK MAANG TEEKA</option>
+                    <option value="RUBAROO MAANG TEEKA" <?php selected($maang_teeka, 'RUBAROO MAANG TEEKA'); ?>>RUBAROO MAANG TEEKA</option>
+                    <option value="NORMAL POLKI MAANG TEEKA" <?php selected($maang_teeka, 'NORMAL POLKI MAANG TEEKA'); ?>>NORMAL POLKI MAANG TEEKA</option>
+                    <option value="AC KUNDAN MAANG TEEKA" <?php selected($maang_teeka, 'AC KUNDAN MAANG TEEKA'); ?>>AC KUNDAN MAANG TEEKA</option>
+                    <option value="NAVRATAN MAANG TEEKA" <?php selected($maang_teeka, 'NAVRATAN MAANG TEEKA'); ?>>NAVRATAN MAANG TEEKA</option>
+                    <option value="MEENAKARI MAANG TEEKA" <?php selected($maang_teeka, 'MEENAKARI MAANG TEEKA'); ?>>MEENAKARI MAANG TEEKA</option>
+                    <option value="CZ MAANG TEEKA DIAMOND FINISH" <?php selected($maang_teeka, 'CZ MAANG TEEKA DIAMOND FINISH'); ?>>CZ MAANG TEEKA DIAMOND FINISH</option>
+                    <option value="MOZONIGHT MAANG TEEKA" <?php selected($maang_teeka, 'MOZONIGHT MAANG TEEKA'); ?>>MOZONIGHT MAANG TEEKA</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ring"><?php _e('Ring', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <select id="ring" name="ring" style="min-width:200px;">
+                    <option value="">-- Select Ring --</option>
+                    <option value="POLKI RING (MANISH MALHOTRA)" <?php selected($ring, 'POLKI RING (MANISH MALHOTRA)'); ?>>POLKI RING (MANISH MALHOTRA)</option>
+                    <option value="NORMAL POLKI RING" <?php selected($ring, 'NORMAL POLKI RING'); ?>>NORMAL POLKI RING</option>
+                    <option value="DIAMOND POLKI RING" <?php selected($ring, 'DIAMOND POLKI RING'); ?>>DIAMOND POLKI RING</option>
+                    <option value="AHMD RING" <?php selected($ring, 'AHMD RING'); ?>>AHMD RING</option>
+                    <option value="GREEN MEENA RING" <?php selected($ring, 'GREEN MEENA RING'); ?>>GREEN MEENA RING</option>
+                    <option value="BIKANERI KUNDAN RING" <?php selected($ring, 'BIKANERI KUNDAN RING'); ?>>BIKANERI KUNDAN RING</option>
+                    <option value="KUNDAN RING" <?php selected($ring, 'KUNDAN RING'); ?>>KUNDAN RING</option>
+                    <option value="NAVRATAN KUNDAN RING" <?php selected($ring, 'NAVRATAN KUNDAN RING'); ?>>NAVRATAN KUNDAN RING</option>
+                    <option value="ANTIQUE RING" <?php selected($ring, 'ANTIQUE RING'); ?>>ANTIQUE RING</option>
+                    <option value="RAD RING" <?php selected($ring, 'RAD RING'); ?>>RAD RING</option>
+                    <option value="MEENA RING" <?php selected($ring, 'MEENA RING'); ?>>MEENA RING</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="matha_patti"><?php _e('Matha Patti', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <select id="matha_patti" name="matha_patti" style="min-width:200px;">
+                    <option value="">-- Select Matha Patti --</option>
+                    <option value="EVNEET MATHA PATTI" <?php selected($matha_patti, 'EVNEET MATHA PATTI'); ?>>EVNEET MATHA PATTI</option>
+                    <option value="KUNDAN MATHA PATTI" <?php selected($matha_patti, 'KUNDAN MATHA PATTI'); ?>>KUNDAN MATHA PATTI</option>
+                    <option value="RAD MATHAPATTI" <?php selected($matha_patti, 'RAD MATHAPATTI'); ?>>RAD MATHAPATTI</option>
+                    <option value="GREEN MEENA PATTI" <?php selected($matha_patti, 'GREEN MEENA PATTI'); ?>>GREEN MEENA PATTI</option>
+                    <option value="AHMD MATHA PATTI" <?php selected($matha_patti, 'AHMD MATHA PATTI'); ?>>AHMD MATHA PATTI</option>
+                    <option value="JAIPURI MATHA PATTI" <?php selected($matha_patti, 'JAIPURI MATHA PATTI'); ?>>JAIPURI MATHA PATTI</option>
+                    <option value="OVAL MATHA PATTI" <?php selected($matha_patti, 'OVAL MATHA PATTI'); ?>>OVAL MATHA PATTI</option>
+                    <option value="BROAD MATHA PATTI" <?php selected($matha_patti, 'BROAD MATHA PATTI'); ?>>BROAD MATHA PATTI</option>
+                    <option value="HEAVY MATHA PATTI MINT GREEN" <?php selected($matha_patti, 'HEAVY MATHA PATTI MINT GREEN'); ?>>HEAVY MATHA PATTI MINT GREEN</option>
+                    <option value="SMALL DROP MATHA PATTI" <?php selected($matha_patti, 'SMALL DROP MATHA PATTI'); ?>>SMALL DROP MATHA PATTI</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="sheesh_patti"><?php _e('Sheesh Patti', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <select id="sheesh_patti" name="sheesh_patti" style="min-width:200px;">
+                    <option value="">-- Select Sheesh Patti --</option>
+                    <option value="POLKI SHEESH PATTI" <?php selected($sheesh_patti, 'POLKI SHEESH PATTI'); ?>>POLKI SHEESH PATTI</option>
+                    <option value="NORMAL POLKI SHEESH PATTI" <?php selected($sheesh_patti, 'NORMAL POLKI SHEESH PATTI'); ?>>NORMAL POLKI SHEESH PATTI</option>
+                    <option value="DIAMOND POLKI SHEESH PATTI" <?php selected($sheesh_patti, 'DIAMOND POLKI SHEESH PATTI'); ?>>DIAMOND POLKI SHEESH PATTI</option>
+                    <option value="KUNDAN SHEESH PATTI" <?php selected($sheesh_patti, 'KUNDAN SHEESH PATTI'); ?>>KUNDAN SHEESH PATTI</option>
+                    <option value="MEENA SHEESH PATTI" <?php selected($sheesh_patti, 'MEENA SHEESH PATTI'); ?>>MEENA SHEESH PATTI</option>
+                    <option value="GREEN MEENA SHEESH PATTI" <?php selected($sheesh_patti, 'GREEN MEENA SHEESH PATTI'); ?>>GREEN MEENA SHEESH PATTI</option>
+                    <option value="RAD SHEESH PATTI" <?php selected($sheesh_patti, 'RAD SHEESH PATTI'); ?>>RAD SHEESH PATTI</option>
+                    <option value="MOZONIGHT POLKI SHEESH PATTI" <?php selected($sheesh_patti, 'MOZONIGHT POLKI SHEESH PATTI'); ?>>MOZONIGHT POLKI SHEESH PATTI</option>
+                    <option value="DC KUNDAN POLKI SHEESH PATTI" <?php selected($sheesh_patti, 'DC KUNDAN POLKI SHEESH PATTI'); ?>>DC KUNDAN POLKI SHEESH PATTI</option>
+                    <option value="RUBAROO SHEESH PATTI" <?php selected($sheesh_patti, 'RUBAROO SHEESH PATTI'); ?>>RUBAROO SHEESH PATTI</option>
+                    <option value="WHITE CHID JAIPURI SHEESH PATTI" <?php selected($sheesh_patti, 'WHITE CHID JAIPURI SHEESH PATTI'); ?>>WHITE CHID JAIPURI SHEESH PATTI</option>
+                    <option value="ANTIQUE FINISHED SHEESH PATTI" <?php selected($sheesh_patti, 'ANTIQUE FINISHED SHEESH PATTI'); ?>>ANTIQUE FINISHED SHEESH PATTI</option>
+                    <option value="COPPER SHEESH PATTI" <?php selected($sheesh_patti, 'COPPER SHEESH PATTI'); ?>>COPPER SHEESH PATTI</option>
+                    <option value="AHMD SHEESH PATTI" <?php selected($sheesh_patti, 'AHMD SHEESH PATTI'); ?>>AHMD SHEESH PATTI</option>
+                    <option value="JAIPURI SHEESH PATTI" <?php selected($sheesh_patti, 'JAIPURI SHEESH PATTI'); ?>>JAIPURI SHEESH PATTI</option>
+                    <option value="BIKANERI KUNDAN SHEESH PATTI" <?php selected($sheesh_patti, 'BIKANERI KUNDAN SHEESH PATTI'); ?>>BIKANERI KUNDAN SHEESH PATTI</option>
+                    <option value="KUNDAN SHEESH PATTI 2" <?php selected($sheesh_patti, 'KUNDAN SHEESH PATTI 2'); ?>>KUNDAN SHEESH PATTI</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="hath_phool"><?php _e('Hath Phool', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <select id="hath_phool" name="hath_phool" style="min-width:200px;">
+                    <option value="">-- Select Hath Phool --</option>
+                    <option value="POLKI HATHPHOOL" <?php selected($hath_phool, 'POLKI HATHPHOOL'); ?>>POLKI HATHPHOOL</option>
+                    <option value="NORMAL POLKI HATHPHOOL" <?php selected($hath_phool, 'NORMAL POLKI HATHPHOOL'); ?>>NORMAL POLKI HATHPHOOL</option>
+                    <option value="DIAMOND POLKI HATHPHOOL" <?php selected($hath_phool, 'DIAMOND POLKI HATHPHOOL'); ?>>DIAMOND POLKI HATHPHOOL</option>
+                    <option value="GREEN MEENA HATHPHOOL" <?php selected($hath_phool, 'GREEN MEENA HATHPHOOL'); ?>>GREEN MEENA HATHPHOOL</option>
+                    <option value="RAD HATHPHOOL" <?php selected($hath_phool, 'RAD HATHPHOOL'); ?>>RAD HATHPHOOL</option>
+                    <option value="AHMD HATHPHOOL" <?php selected($hath_phool, 'AHMD HATHPHOOL'); ?>>AHMD HATHPHOOL</option>
+                    <option value="DC KUNDAN HATHPHOOL" <?php selected($hath_phool, 'DC KUNDAN HATHPHOOL'); ?>>DC KUNDAN HATHPHOOL</option>
+                    <option value="JAIPURI HATHPHOOL" <?php selected($hath_phool, 'JAIPURI HATHPHOOL'); ?>>JAIPURI HATHPHOOL</option>
+                    <option value="MEENA POLKI HATHPHOOL" <?php selected($hath_phool, 'MEENA POLKI HATHPHOOL'); ?>>MEENA POLKI HATHPHOOL</option>
+                    <option value="ANTIQUE HATHPHOOL" <?php selected($hath_phool, 'ANTIQUE HATHPHOOL'); ?>>ANTIQUE HATHPHOOL</option>
+                    <option value="RUBAROO HATHPHOOL" <?php selected($hath_phool, 'RUBAROO HATHPHOOL'); ?>>RUBAROO HATHPHOOL</option>
+                    <option value="COPPER HATHPHOOL" <?php selected($hath_phool, 'COPPER HATHPHOOL'); ?>>COPPER HATHPHOOL</option>
+                    <option value="BIKANERI KUNDAN HATHPHOOL" <?php selected($hath_phool, 'BIKANERI KUNDAN HATHPHOOL'); ?>>BIKANERI KUNDAN HATHPHOOL</option>
+                    <option value="KUNDAN HATHPHOOL" <?php selected($hath_phool, 'KUNDAN HATHPHOOL'); ?>>KUNDAN HATHPHOOL</option>
+                    <option value="BIG KUNDAN HATHPHOOL" <?php selected($hath_phool, 'BIG KUNDAN HATHPHOOL'); ?>>BIG KUNDAN HATHPHOOL</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="pasa"><?php _e('Pasa', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <select id="pasa" name="pasa" style="min-width:200px;">
+                    <option value="">-- Select Pasa --</option>
+                    <option value="KUNDAN PASA" <?php selected($pasa, 'KUNDAN PASA'); ?>>KUNDAN PASA</option>
+                    <option value="RUBAROO PASA" <?php selected($pasa, 'RUBAROO PASA'); ?>>RUBAROO PASA</option>
+                    <option value="RAD PASA" <?php selected($pasa, 'RAD PASA'); ?>>RAD PASA</option>
+                    <option value="COPPER PASA" <?php selected($pasa, 'COPPER PASA'); ?>>COPPER PASA</option>
+                    <option value="DC KUNDAN PASA" <?php selected($pasa, 'DC KUNDAN PASA'); ?>>DC KUNDAN PASA</option>
+                    <option value="KATHAK PASA" <?php selected($pasa, 'KATHAK PASA'); ?>>KATHAK PASA</option>
+                    <option value="AHMEDABADI PASA" <?php selected($pasa, 'AHMEDABADI PASA'); ?>>AHMEDABADI PASA</option>
+                    <option value="BLACK POLISH PASA" <?php selected($pasa, 'BLACK POLISH PASA'); ?>>BLACK POLISH PASA</option>
+                    <option value="OXYDIZED PASA" <?php selected($pasa, 'OXYDIZED PASA'); ?>>OXYDIZED PASA</option>
+                    <option value="JAIPURI PASA" <?php selected($pasa, 'JAIPURI PASA'); ?>>JAIPURI PASA</option>
+                    <option value="ANTIQUE FINISH PASA" <?php selected($pasa, 'ANTIQUE FINISH PASA'); ?>>ANTIQUE FINISH PASA</option>
+                    <option value="LCT PASA" <?php selected($pasa, 'LCT PASA'); ?>>LCT PASA</option>
+                    <option value="AC KUNDAN PASA" <?php selected($pasa, 'AC KUNDAN PASA'); ?>>AC KUNDAN PASA</option>
+                    <option value="JADAU PASA" <?php selected($pasa, 'JADAU PASA'); ?>>JADAU PASA</option>
+                </select>
             </td>
         </tr>
         <tr>
@@ -745,6 +924,12 @@ function kavipushp_booking_details_callback($post) {
             <td>
                 <textarea id="booking_notes" name="booking_notes" rows="3" class="large-text" placeholder="<?php esc_attr_e('Enter any customization details (will be shown on invoices)', 'kavipushp-bridals'); ?>"><?php echo esc_textarea($notes); ?></textarea>
                 <p class="description"><?php _e('This text will appear on all invoices for this booking.', 'kavipushp-bridals'); ?></p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="stylist_attended"><?php _e('Stylist Who Attended', 'kavipushp-bridals'); ?></label></th>
+            <td>
+                <input type="text" id="stylist_attended" name="stylist_attended" value="<?php echo esc_attr($stylist); ?>" class="regular-text" placeholder="<?php esc_attr_e('Enter stylist name', 'kavipushp-bridals'); ?>">
             </td>
         </tr>
     </table>
@@ -826,6 +1011,13 @@ function kavipushp_booking_details_callback($post) {
         var option = select.options[select.selectedIndex];
         var price = option ? option.dataset.price : '';
         document.getElementById('total_amount').value = price || '';
+
+        // Keep all hardcoded options — just reset selection when bridal set changes
+        var jewelryFields = ['nath', 'maang_teeka', 'ring', 'matha_patti', 'sheesh_patti', 'hath_phool', 'pasa'];
+        for (var j = 0; j < jewelryFields.length; j++) {
+            var sel = document.getElementById(jewelryFields[j]);
+            if (sel) sel.selectedIndex = 0;
+        }
     }
 
     function checkSetAvailability() {
@@ -883,7 +1075,7 @@ function kavipushp_booking_details_callback($post) {
 
     // Calculate on page load if function date exists
     document.addEventListener('DOMContentLoaded', function() {
-        // Auto-fill rent if bridal set is already selected
+        // Auto-fill rent and jewelry dropdowns if bridal set is already selected
         if (document.getElementById('bridal_set_id').value) {
             fillBridalSetRent();
         }
@@ -927,11 +1119,14 @@ function kavipushp_save_booking_meta($post_id) {
         'booking_amount'   => '_booking_amount',
         'deposit_paid'     => '_deposit_paid',
         'booking_notes'    => '_booking_notes',
+        'stylist_attended' => '_stylist_attended',
         'nath'             => '_nath',
-        'teeka'            => '_teeka',
+        'maang_teeka'      => '_maang_teeka',
+        'ring'             => '_ring',
         'matha_patti'      => '_matha_patti',
         'sheesh_patti'     => '_sheesh_patti',
         'hath_phool'       => '_hath_phool',
+        'pasa'             => '_pasa',
     );
 
     foreach ($fields as $field => $meta_key) {
@@ -955,8 +1150,29 @@ function kavipushp_save_booking_meta($post_id) {
         ));
         add_action('save_post_booking', 'kavipushp_save_booking_meta');
     }
+
+    // After saving, redirect to blank new booking form
+    add_filter('redirect_post_location', function($location) use ($post_id) {
+        if (get_post_type($post_id) === 'booking') {
+            return admin_url('post-new.php?post_type=booking&booking_saved=1');
+        }
+        return $location;
+    });
 }
 add_action('save_post_booking', 'kavipushp_save_booking_meta');
+
+/**
+ * Show success notice after booking is saved
+ */
+add_action('admin_notices', function() {
+    if (
+        isset($_GET['post_type'], $_GET['booking_saved']) &&
+        $_GET['post_type'] === 'booking' &&
+        $_GET['booking_saved'] === '1'
+    ) {
+        echo '<div class="notice notice-success is-dismissible"><p><strong>Booking saved successfully!</strong> Form is ready for a new booking.</p></div>';
+    }
+});
 
 /**
  * Register Widgets
