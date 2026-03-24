@@ -714,21 +714,97 @@ function kavipushp_render_bookings_management() {
         </div>
 
         <?php
-        $bookings = get_posts(array(
-            'post_type'      => 'booking',
-            'posts_per_page' => 20,
-            'orderby'        => 'date',
-            'order'          => 'DESC',
-        ));
+        global $wpdb;
+        $search_query   = isset($_GET['kp_search']) ? sanitize_text_field(trim($_GET['kp_search'])) : '';
         $total_bookings = wp_count_posts('booking')->publish;
+
+        if ($search_query !== '') {
+            // --- Find bridal sets matching title (WordPress search) ---
+            $sets_by_title = get_posts(array(
+                'post_type'      => 'bridal_set',
+                'posts_per_page' => -1,
+                's'              => $search_query,
+                'fields'         => 'ids',
+            ));
+
+            // --- Find bridal sets matching set ID/code (postmeta LIKE) ---
+            $sets_by_code = $wpdb->get_col($wpdb->prepare(
+                "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_set_id' AND meta_value LIKE %s",
+                '%' . $wpdb->esc_like($search_query) . '%'
+            ));
+
+            $matching_set_ids = array_unique(array_merge(
+                array_map('intval', $sets_by_title),
+                array_map('intval', $sets_by_code)
+            ));
+
+            // --- Build meta_query: match set ID OR customer name ---
+            $meta_query = array('relation' => 'OR',
+                array('key' => '_customer_name', 'value' => $search_query, 'compare' => 'LIKE'),
+            );
+            if (!empty($matching_set_ids)) {
+                $meta_query[] = array('key' => '_bridal_set_id', 'value' => $matching_set_ids, 'compare' => 'IN');
+            }
+
+            $bookings = get_posts(array(
+                'post_type'      => 'booking',
+                'posts_per_page' => -1,
+                'orderby'        => 'date',
+                'order'          => 'DESC',
+                'meta_query'     => $meta_query,
+            ));
+        } else {
+            $bookings = get_posts(array(
+                'post_type'      => 'booking',
+                'posts_per_page' => -1,
+                'orderby'        => 'date',
+                'order'          => 'DESC',
+            ));
+        }
         ?>
+
+        <!-- Search Bar -->
+        <form method="get" action="" style="margin-bottom:16px;">
+            <input type="hidden" name="page" value="kavipushp-bookings">
+            <div style="display:flex;gap:8px;align-items:center;max-width:600px;">
+                <div style="flex:1;position:relative;">
+                    <i class="dashicons dashicons-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#999;pointer-events:none;"></i>
+                    <input type="text" name="kp_search" value="<?php echo esc_attr($search_query); ?>"
+                        placeholder="<?php esc_attr_e('Search by Set Title, Set ID, or Customer Name…', 'kavipushp-bridals'); ?>"
+                        style="width:100%;padding:8px 12px 8px 34px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);"
+                        autofocus>
+                </div>
+                <button type="submit" class="button button-primary" style="padding:8px 16px;">
+                    <i class="dashicons dashicons-search" style="margin-right:4px;"></i><?php _e('Search', 'kavipushp-bridals'); ?>
+                </button>
+                <?php if ($search_query): ?>
+                <a href="<?php echo admin_url('admin.php?page=kavipushp-bookings'); ?>" class="button" style="padding:8px 16px;">
+                    <i class="dashicons dashicons-no-alt" style="margin-right:4px;"></i><?php _e('Clear', 'kavipushp-bridals'); ?>
+                </a>
+                <?php endif; ?>
+            </div>
+            <?php if ($search_query): ?>
+            <p style="margin:8px 0 0;font-size:13px;color:#666;">
+                <?php printf(
+                    _n('Found <strong>%d booking</strong> for &ldquo;%s&rdquo;', 'Found <strong>%d bookings</strong> for &ldquo;%s&rdquo;', count($bookings), 'kavipushp-bridals'),
+                    count($bookings), esc_html($search_query)
+                ); ?>
+            </p>
+            <?php endif; ?>
+        </form>
 
         <form method="post" id="kp-bookings-bulk-form">
             <?php wp_nonce_field('kp_bulk_bookings'); ?>
             <input type="hidden" name="page" value="kavipushp-bookings">
         <div class="kp-card">
             <div class="kp-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-                <h2><i class="dashicons dashicons-calendar-alt"></i> <?php printf(__('All Bookings (%d) - Latest First', 'kavipushp-bridals'), $total_bookings); ?></h2>
+                <h2><i class="dashicons dashicons-calendar-alt"></i>
+                    <?php if ($search_query): ?>
+                        <?php printf(__('Search Results (%d)', 'kavipushp-bridals'), count($bookings)); ?>
+                    <?php else: ?>
+                        <?php printf(__('All Bookings (%d) - Latest First', 'kavipushp-bridals'), $total_bookings); ?>
+                    <?php endif; ?>
+                </h2>
                 <?php if (!empty($bookings)): ?>
                 <div style="display:flex;gap:8px;align-items:center;">
                     <label style="font-size:13px;cursor:pointer;"><input type="checkbox" id="kp-select-all-bookings" style="margin-right:4px;"><?php _e('Select All', 'kavipushp-bridals'); ?></label>
