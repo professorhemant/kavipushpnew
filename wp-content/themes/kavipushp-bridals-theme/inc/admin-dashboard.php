@@ -114,7 +114,7 @@ add_action('admin_menu', 'kavipushp_admin_menu');
 function kavipushp_admin_home_button() {
     $screen = get_current_screen();
     if (!$screen) return;
-    $is_kavipushp = (strpos($screen->id, 'kavipushp') !== false);
+    $is_kavipushp = (strpos($screen->id, 'kavipushp') !== false) || (isset($_GET['page']) && strpos($_GET['page'], 'kavipushp') !== false);
     $is_booking = ($screen->post_type === 'booking');
     $is_bridal_set = ($screen->post_type === 'bridal_set');
     if (!$is_kavipushp && !$is_booking && !$is_bridal_set) {
@@ -275,6 +275,9 @@ function kavipushp_render_dashboard() {
                         <thead>
                             <tr>
                                 <th><?php _e('Customer Name', 'kavipushp-bridals'); ?></th>
+                                <th><?php _e('Set Title', 'kavipushp-bridals'); ?></th>
+                                <th><?php _e('Set ID', 'kavipushp-bridals'); ?></th>
+                                <th><?php _e('Category', 'kavipushp-bridals'); ?></th>
                                 <th><?php _e('Booking Date', 'kavipushp-bridals'); ?></th>
                                 <th><?php _e('Function Date', 'kavipushp-bridals'); ?></th>
                                 <th><?php _e('Return Date', 'kavipushp-bridals'); ?></th>
@@ -285,13 +288,24 @@ function kavipushp_render_dashboard() {
                             <?php if (!empty($recent_bookings)): ?>
                                 <?php foreach ($recent_bookings as $booking):
                                     $customer_name = get_post_meta($booking->ID, '_customer_name', true);
-                                    $booking_date = get_the_date('d/m/Y', $booking);
-                                    $pickup_date = get_post_meta($booking->ID, '_pickup_date', true);
-                                    $return_date = get_post_meta($booking->ID, '_return_date', true);
-                                    $status = get_post_meta($booking->ID, '_booking_status', true);
+                                    $booking_date  = get_the_date('d/m/Y', $booking);
+                                    $pickup_date   = get_post_meta($booking->ID, '_pickup_date', true);
+                                    $return_date   = get_post_meta($booking->ID, '_return_date', true);
+                                    $status        = get_post_meta($booking->ID, '_booking_status', true);
+
+                                    // Set details
+                                    $set_post_id   = get_post_meta($booking->ID, '_bridal_set_id', true);
+                                    $set_post      = $set_post_id ? get_post($set_post_id) : null;
+                                    $set_title     = $set_post ? $set_post->post_title : '-';
+                                    $set_code      = $set_post_id ? (get_post_meta($set_post_id, '_set_id', true) ?: 'KP' . $set_post_id) : '-';
+                                    $cat_terms     = $set_post_id ? get_the_terms($set_post_id, 'bridal_category') : null;
+                                    $set_category  = ($cat_terms && !is_wp_error($cat_terms)) ? $cat_terms[0]->name : (get_post_meta($set_post_id, '_bridal_set_category', true) ?: '-');
                                 ?>
                                 <tr>
                                     <td><?php echo esc_html($customer_name); ?></td>
+                                    <td><?php echo esc_html($set_title); ?></td>
+                                    <td><code style="background:#f5f5f5;padding:2px 6px;border-radius:4px;"><?php echo esc_html($set_code); ?></code></td>
+                                    <td><?php echo esc_html($set_category); ?></td>
                                     <td><?php echo esc_html($booking_date); ?></td>
                                     <td><?php echo $pickup_date ? date('d/m/Y', strtotime($pickup_date)) : '-'; ?></td>
                                     <td><?php echo $return_date ? date('d/m/Y', strtotime($return_date)) : '-'; ?></td>
@@ -304,7 +318,7 @@ function kavipushp_render_dashboard() {
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="5" class="kp-no-data"><?php _e('No bookings found', 'kavipushp-bridals'); ?></td>
+                                    <td colspan="8" class="kp-no-data"><?php _e('No bookings found', 'kavipushp-bridals'); ?></td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -1073,6 +1087,7 @@ function kavipushp_create_tables() {
         customer_address text,
         set_name varchar(255),
         set_code varchar(50),
+        set_category varchar(100),
         function_date date,
         pickup_date date,
         return_date date,
@@ -1116,6 +1131,8 @@ function kavipushp_get_invoice() {
     $set_id = get_post_meta($booking_id, '_bridal_set_id', true);
     $set = $set_id ? get_post($set_id) : null;
     $set_code = $set_id ? get_post_meta($set_id, '_set_id', true) : '';
+    $set_cat_terms = $set_id ? get_the_terms($set_id, 'bridal_category') : null;
+    $set_category = ($set_cat_terms && !is_wp_error($set_cat_terms)) ? $set_cat_terms[0]->name : ($set_id ? get_post_meta($set_id, '_bridal_set_category', true) : '');
     $pickup_date = get_post_meta($booking_id, '_pickup_date', true);
     $return_date = get_post_meta($booking_id, '_return_date', true);
     $total = get_post_meta($booking_id, '_total_amount', true);
@@ -1137,6 +1154,7 @@ function kavipushp_get_invoice() {
         'customer_phone' => $customer_phone,
         'set_name'       => $set ? $set->post_title : 'N/A',
         'set_id'         => $set_code ?: 'N/A',
+        'set_category'   => $set_category ?: '',
         'pickup_date'    => $pickup_date ? date('d/m/Y', strtotime($pickup_date)) : 'N/A',
         'return_date'    => $return_date ? date('d/m/Y', strtotime($return_date)) : 'N/A',
         'days'           => $days,
@@ -1183,6 +1201,22 @@ function kavipushp_save_invoice() {
         $return_date = (count($parts) === 3) ? $parts[2] . '-' . $parts[1] . '-' . $parts[0] : sanitize_text_field($_POST['return_date']);
     }
 
+    // Add amount_received column if not exists
+    $col_exists = $wpdb->get_var("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$wpdb->prefix}kavipushp_invoices' AND COLUMN_NAME = 'amount_received'");
+    if (!$col_exists) {
+        $wpdb->query("ALTER TABLE $table ADD COLUMN amount_received decimal(10,2) NOT NULL DEFAULT 0");
+    }
+    // Add damages_paid column if not exists
+    $dp_col_exists = $wpdb->get_var("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$wpdb->prefix}kavipushp_invoices' AND COLUMN_NAME = 'damages_paid'");
+    if (!$dp_col_exists) {
+        $wpdb->query("ALTER TABLE $table ADD COLUMN damages_paid decimal(10,2) NOT NULL DEFAULT 0");
+    }
+    // Add set_category column if not exists
+    $cat_col_exists = $wpdb->get_var("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$wpdb->prefix}kavipushp_invoices' AND COLUMN_NAME = 'set_category'");
+    if (!$cat_col_exists) {
+        $wpdb->query("ALTER TABLE $table ADD COLUMN set_category varchar(100) AFTER set_code");
+    }
+
     $data = array(
         'booking_id'          => $booking_id,
         'invoice_number'      => $invoice_number,
@@ -1193,12 +1227,15 @@ function kavipushp_save_invoice() {
         'customer_address'    => sanitize_textarea_field($_POST['customer_address'] ?? ''),
         'set_name'            => sanitize_text_field($_POST['set_name'] ?? ''),
         'set_code'            => sanitize_text_field($_POST['set_code'] ?? ''),
+        'set_category'        => sanitize_text_field($_POST['set_category'] ?? ''),
         'function_date'       => $function_date ?: null,
         'pickup_date'         => $pickup_date ?: null,
         'return_date'         => $return_date ?: null,
         'rent_amount'         => floatval($_POST['rent_amount'] ?? 0),
         'booking_amount'      => floatval($_POST['booking_amount'] ?? 0),
         'security_deposit'    => floatval($_POST['security_deposit'] ?? 0),
+        'amount_received'     => floatval($_POST['amount_received'] ?? 0),
+        'damages_paid'        => floatval($_POST['damages_paid'] ?? 0),
         'grand_total'         => floatval($_POST['grand_total'] ?? 0),
         'customization_notes' => sanitize_textarea_field($_POST['customization_notes'] ?? ''),
         'stylist_name'        => sanitize_text_field($_POST['stylist_name'] ?? ''),
