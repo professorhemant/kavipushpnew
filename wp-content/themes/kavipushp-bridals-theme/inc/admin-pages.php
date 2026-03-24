@@ -69,6 +69,54 @@ add_action('admin_init', function () {
             exit;
         }
     }
+
+    // Handle bulk delete bookings
+    if (isset($_POST['page']) && $_POST['page'] === 'kavipushp-bookings'
+        && isset($_POST['bulk_action']) && in_array($_POST['bulk_action'], ['delete_selected', 'delete_all'])
+    ) {
+        check_admin_referer('kp_bulk_bookings');
+        if ($_POST['bulk_action'] === 'delete_all') {
+            $all = get_posts(array('post_type' => 'booking', 'posts_per_page' => -1, 'fields' => 'ids'));
+            foreach ($all as $id) { wp_delete_post($id, true); }
+        } elseif (!empty($_POST['booking_ids']) && is_array($_POST['booking_ids'])) {
+            foreach (array_map('intval', $_POST['booking_ids']) as $id) { wp_delete_post($id, true); }
+        }
+        wp_redirect(admin_url('admin.php?page=kavipushp-bookings&deleted=1'));
+        exit;
+    }
+
+    // Handle bulk delete customers
+    if (isset($_POST['page']) && $_POST['page'] === 'kavipushp-customers'
+        && isset($_POST['bulk_action']) && in_array($_POST['bulk_action'], ['delete_selected', 'delete_all'])
+    ) {
+        check_admin_referer('kp_bulk_customers');
+        global $wpdb;
+        $table = $wpdb->prefix . 'kavipushp_customers';
+        if ($_POST['bulk_action'] === 'delete_all') {
+            $all_ids = $wpdb->get_col("SELECT id FROM $table");
+            foreach ($all_ids as $id) { kavipushp_delete_customer(intval($id)); }
+        } elseif (!empty($_POST['customer_ids']) && is_array($_POST['customer_ids'])) {
+            foreach (array_map('intval', $_POST['customer_ids']) as $id) { kavipushp_delete_customer($id); }
+        }
+        wp_redirect(admin_url('admin.php?page=kavipushp-customers&deleted=1'));
+        exit;
+    }
+
+    // Handle bulk delete invoices
+    if (isset($_POST['page']) && $_POST['page'] === 'kavipushp-invoices'
+        && isset($_POST['bulk_action']) && in_array($_POST['bulk_action'], ['delete_selected', 'delete_all'])
+    ) {
+        check_admin_referer('kp_bulk_invoices');
+        global $wpdb;
+        if ($_POST['bulk_action'] === 'delete_all') {
+            $wpdb->query("DELETE FROM {$wpdb->prefix}kavipushp_invoices");
+        } elseif (!empty($_POST['invoice_ids']) && is_array($_POST['invoice_ids'])) {
+            $ids = implode(',', array_map('intval', $_POST['invoice_ids']));
+            $wpdb->query("DELETE FROM {$wpdb->prefix}kavipushp_invoices WHERE id IN ($ids)");
+        }
+        wp_redirect(admin_url('admin.php?page=kavipushp-invoices&deleted=1'));
+        exit;
+    }
 });
 
 /**
@@ -236,8 +284,8 @@ function kavipushp_render_customers_enhanced() {
                                 <input type="date" name="function_date" id="function_date" value="<?php echo $customer ? esc_attr($customer->function_date) : ''; ?>" onchange="calculateReturnDate()">
                             </div>
                             <div class="kp-form-group">
-                                <label><?php _e('Return Date', 'kavipushp-bridals'); ?> <small>(+1 day)</small></label>
-                                <input type="date" name="return_date" id="return_date" value="<?php echo $customer ? esc_attr($customer->return_date) : ''; ?>" readonly style="background: #f5f5f5;">
+                                <label><?php _e('Return Date', 'kavipushp-bridals'); ?> <small>(auto +1 day, editable)</small></label>
+                                <input type="date" name="return_date" id="return_date" value="<?php echo $customer ? esc_attr($customer->return_date) : ''; ?>">
                             </div>
                             <div class="kp-form-group">
                                 <label><?php _e('Booking Date', 'kavipushp-bridals'); ?></label>
@@ -249,28 +297,35 @@ function kavipushp_render_customers_enhanced() {
                             </div>
                         </div>
                         <script>
-                        function calculateReturnDate() {
-                            var functionDate = document.getElementById('function_date').value;
-                            if (functionDate) {
-                                // Calculate return date (function date + 1 day)
-                                var returnDateObj = new Date(functionDate);
-                                returnDateObj.setDate(returnDateObj.getDate() + 1);
-                                var returnDate = returnDateObj.toISOString().split('T')[0];
-                                document.getElementById('return_date').value = returnDate;
-
-                                // Calculate pickup date (function date - 1 day)
-                                var pickupDateObj = new Date(functionDate);
-                                pickupDateObj.setDate(pickupDateObj.getDate() - 1);
-                                var pickupDate = pickupDateObj.toISOString().split('T')[0];
-                                document.getElementById('pickup_date').value = pickupDate;
-                            }
-                        }
-                        // Calculate on page load if function date exists
+                        var returnDateManuallyEdited = false;
                         document.addEventListener('DOMContentLoaded', function() {
+                            // If return_date already has a saved value, treat it as manually set
+                            if (document.getElementById('return_date').value) {
+                                returnDateManuallyEdited = true;
+                            }
+                            document.getElementById('return_date').addEventListener('change', function() {
+                                returnDateManuallyEdited = true;
+                            });
+                            // On page load, only auto-fill pickup date (not return date if already saved)
                             if (document.getElementById('function_date').value) {
                                 calculateReturnDate();
                             }
                         });
+                        function calculateReturnDate() {
+                            var functionDate = document.getElementById('function_date').value;
+                            if (functionDate) {
+                                // Only auto-set return date if user hasn't manually edited it
+                                if (!returnDateManuallyEdited) {
+                                    var returnDateObj = new Date(functionDate);
+                                    returnDateObj.setDate(returnDateObj.getDate() + 1);
+                                    document.getElementById('return_date').value = returnDateObj.toISOString().split('T')[0];
+                                }
+                                // Calculate pickup date (function date - 1 day)
+                                var pickupDateObj = new Date(functionDate);
+                                pickupDateObj.setDate(pickupDateObj.getDate() - 1);
+                                document.getElementById('pickup_date').value = pickupDateObj.toISOString().split('T')[0];
+                            }
+                        }
                         </script>
 
                         <h3 class="kp-section-title"><?php _e('Visit Tracking Information', 'kavipushp-bridals'); ?></h3>
@@ -315,15 +370,28 @@ function kavipushp_render_customers_enhanced() {
                 </button>
             </div>
 
+            <form method="post" id="kp-customers-bulk-form">
+                <?php wp_nonce_field('kp_bulk_customers'); ?>
+                <input type="hidden" name="page" value="kavipushp-customers">
+
             <div class="kp-card">
-                <div class="kp-card-header">
+                <div class="kp-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
                     <h2><?php _e('All Customers', 'kavipushp-bridals'); ?></h2>
-                    <input type="text" id="search-customers" placeholder="<?php esc_attr_e('Search customers...', 'kavipushp-bridals'); ?>" class="kp-search-input">
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <input type="text" id="search-customers" placeholder="<?php esc_attr_e('Search customers...', 'kavipushp-bridals'); ?>" class="kp-search-input">
+                        <button type="submit" name="bulk_action" value="delete_selected" class="button kp-delete-btn" onclick="return confirm('<?php esc_attr_e('Delete selected customers?', 'kavipushp-bridals'); ?>')">
+                            <i class="dashicons dashicons-trash"></i> <?php _e('Delete Selected', 'kavipushp-bridals'); ?>
+                        </button>
+                        <button type="submit" name="bulk_action" value="delete_all" class="button" style="background:#e74c3c;color:#fff;border-color:#c0392b;" onclick="return confirm('<?php esc_attr_e('Delete ALL customers? This cannot be undone!', 'kavipushp-bridals'); ?>')">
+                            <i class="dashicons dashicons-trash"></i> <?php _e('Delete All', 'kavipushp-bridals'); ?>
+                        </button>
+                    </div>
                 </div>
                 <div class="kp-card-body">
                     <table class="kp-table" id="customers-table">
                         <thead>
                             <tr>
+                                <th style="width:30px;"><input type="checkbox" id="kp-select-all-customers" title="<?php esc_attr_e('Select All', 'kavipushp-bridals'); ?>"></th>
                                 <th><?php _e('Name', 'kavipushp-bridals'); ?></th>
                                 <th><?php _e('Contact', 'kavipushp-bridals'); ?></th>
                                 <th><?php _e('Email', 'kavipushp-bridals'); ?></th>
@@ -339,6 +407,7 @@ function kavipushp_render_customers_enhanced() {
                                 foreach ($customers as $customer):
                             ?>
                             <tr>
+                                <td><input type="checkbox" name="customer_ids[]" value="<?php echo intval($customer->id); ?>" class="kp-customer-cb"></td>
                                 <td><strong><?php echo esc_html($customer->full_name); ?></strong></td>
                                 <td><?php echo esc_html($customer->phone); ?></td>
                                 <td><?php echo esc_html($customer->email); ?></td>
@@ -361,13 +430,19 @@ function kavipushp_render_customers_enhanced() {
                             else:
                             ?>
                             <tr>
-                                <td colspan="6" class="kp-no-data"><?php _e('No customers found. Add your first customer!', 'kavipushp-bridals'); ?></td>
+                                <td colspan="7" class="kp-no-data"><?php _e('No customers found. Add your first customer!', 'kavipushp-bridals'); ?></td>
                             </tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
             </div>
+            </form>
+            <script>
+            document.getElementById('kp-select-all-customers') && document.getElementById('kp-select-all-customers').addEventListener('change', function() {
+                document.querySelectorAll('.kp-customer-cb').forEach(function(cb) { cb.checked = this.checked; }, this);
+            });
+            </script>
         <?php endif; ?>
     </div>
     <?php
@@ -626,6 +701,9 @@ function kavipushp_render_bookings_management() {
                 </div>
             </div>
             <div class="kp-page-actions">
+                <a href="<?php echo esc_url(home_url('/')); ?>" class="button">
+                    <i class="dashicons dashicons-admin-home"></i> <?php _e('Home', 'kavipushp-bridals'); ?>
+                </a>
                 <button class="button" onclick="kavipushpExportBookings()">
                     <i class="dashicons dashicons-download"></i> <?php _e('Export to Excel', 'kavipushp-bridals'); ?>
                 </button>
@@ -645,9 +723,23 @@ function kavipushp_render_bookings_management() {
         $total_bookings = wp_count_posts('booking')->publish;
         ?>
 
+        <form method="post" id="kp-bookings-bulk-form">
+            <?php wp_nonce_field('kp_bulk_bookings'); ?>
+            <input type="hidden" name="page" value="kavipushp-bookings">
         <div class="kp-card">
-            <div class="kp-card-header">
+            <div class="kp-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
                 <h2><i class="dashicons dashicons-calendar-alt"></i> <?php printf(__('All Bookings (%d) - Latest First', 'kavipushp-bridals'), $total_bookings); ?></h2>
+                <?php if (!empty($bookings)): ?>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <label style="font-size:13px;cursor:pointer;"><input type="checkbox" id="kp-select-all-bookings" style="margin-right:4px;"><?php _e('Select All', 'kavipushp-bridals'); ?></label>
+                    <button type="submit" name="bulk_action" value="delete_selected" class="button kp-delete-btn" onclick="return confirm('<?php esc_attr_e('Delete selected bookings?', 'kavipushp-bridals'); ?>')">
+                        <i class="dashicons dashicons-trash"></i> <?php _e('Delete Selected', 'kavipushp-bridals'); ?>
+                    </button>
+                    <button type="submit" name="bulk_action" value="delete_all" class="button" style="background:#e74c3c;color:#fff;border-color:#c0392b;" onclick="return confirm('<?php esc_attr_e('Delete ALL bookings? This cannot be undone!', 'kavipushp-bridals'); ?>')">
+                        <i class="dashicons dashicons-trash"></i> <?php _e('Delete All', 'kavipushp-bridals'); ?>
+                    </button>
+                </div>
+                <?php endif; ?>
             </div>
             <div class="kp-card-body kp-bookings-list">
                 <?php if (!empty($bookings)): ?>
@@ -659,6 +751,11 @@ function kavipushp_render_bookings_management() {
                         $set_id = get_post_meta($booking->ID, '_bridal_set_id', true);
                         $set = $set_id ? get_post($set_id) : null;
                         $set_code = $set_id ? get_post_meta($set_id, '_set_id', true) : '';
+                        $booking_category = get_post_meta($booking->ID, '_bridal_set_category', true);
+                        if (!$booking_category && $set_id) {
+                            $bk_cat_terms = get_the_terms($set_id, 'bridal_category');
+                            $booking_category = ($bk_cat_terms && !is_wp_error($bk_cat_terms)) ? $bk_cat_terms[0]->name : '';
+                        }
                         $pickup_date = get_post_meta($booking->ID, '_pickup_date', true);
                         $return_date = get_post_meta($booking->ID, '_return_date', true);
                         $function_date = get_post_meta($booking->ID, '_function_date', true);
@@ -669,9 +766,12 @@ function kavipushp_render_bookings_management() {
                     ?>
                     <div class="kp-booking-card">
                         <div class="kp-booking-header">
-                            <div class="kp-booking-customer">
-                                <h3><?php echo esc_html($customer_name); ?></h3>
-                                <p class="kp-booking-id">Booking ID: <?php echo esc_html($booking_uid); ?> | Contact: <?php echo esc_html($customer_phone); ?></p>
+                            <div style="display:flex;align-items:flex-start;gap:10px;flex:1;">
+                                <input type="checkbox" name="booking_ids[]" value="<?php echo $booking->ID; ?>" class="kp-booking-cb" style="margin-top:4px;width:16px;height:16px;cursor:pointer;flex-shrink:0;">
+                                <div class="kp-booking-customer">
+                                    <h3><?php echo esc_html($customer_name); ?></h3>
+                                    <p class="kp-booking-id">Booking ID: <?php echo esc_html($booking_uid); ?> | Contact: <?php echo esc_html($customer_phone); ?></p>
+                                </div>
                             </div>
                             <div class="kp-booking-total">
                                 <span class="kp-price">₹<?php echo number_format($total); ?></span>
@@ -709,6 +809,9 @@ function kavipushp_render_bookings_management() {
                             <?php if ($set): ?>
                             <div class="kp-item-row">
                                 <span class="kp-item-code"><?php echo esc_html($set_code ?: $set->post_title); ?></span>
+                                <?php if ($booking_category): ?>
+                                <span class="kp-item-code" style="background:#e8f4f8; color:#2980b9; margin-left:6px;"><?php echo esc_html($booking_category); ?></span>
+                                <?php endif; ?>
                                 <span class="kp-item-price">₹<?php echo number_format($total); ?></span>
                             </div>
                             <?php else: ?>
@@ -747,7 +850,14 @@ function kavipushp_render_bookings_management() {
                 <?php endif; ?>
             </div>
         </div>
+        </form>
     </div>
+
+    <script>
+    document.getElementById('kp-select-all-bookings') && document.getElementById('kp-select-all-bookings').addEventListener('change', function() {
+        document.querySelectorAll('.kp-booking-cb').forEach(function(cb) { cb.checked = this.checked; }, this);
+    });
+    </script>
 
     <!-- Booking View Modal -->
     <div id="kp-booking-modal-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:99999;justify-content:center;align-items:center;">
@@ -782,6 +892,7 @@ function kavipushp_render_bookings_management() {
                         '<tr><th><?php _e('Email', 'kavipushp-bridals'); ?></th><td>' + b.customer_email + '</td></tr>' +
                         '<tr><th><?php _e('Address', 'kavipushp-bridals'); ?></th><td>' + b.customer_address + '</td></tr>' +
                         '<tr><th><?php _e('Bridal Set', 'kavipushp-bridals'); ?></th><td>' + b.set_name + '</td></tr>' +
+                        (b.set_category ? '<tr><th><?php _e('Category', 'kavipushp-bridals'); ?></th><td>' + b.set_category + '</td></tr>' : '') +
                         '<tr><th><?php _e('Function Date', 'kavipushp-bridals'); ?></th><td>' + b.function_date + '</td></tr>' +
                         '<tr><th><?php _e('Pickup Date', 'kavipushp-bridals'); ?></th><td>' + b.pickup_date + '</td></tr>' +
                         '<tr><th><?php _e('Return Date', 'kavipushp-bridals'); ?></th><td>' + b.return_date + '</td></tr>' +
@@ -849,6 +960,24 @@ function kavipushp_render_invoices_enhanced() {
         $inv_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
         $inv = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}kavipushp_invoices WHERE id = %d", $inv_id));
         if ($inv):
+            // Build set includes from booking jewelry meta
+            $inv_booking_id = intval($inv->booking_id);
+            $inv_jewelry = array(
+                'Nath'           => get_post_meta($inv_booking_id, '_nath', true),
+                'Maang Teeka'    => get_post_meta($inv_booking_id, '_maang_teeka', true),
+                'Ring'           => get_post_meta($inv_booking_id, '_ring', true),
+                'Matha Patti'    => get_post_meta($inv_booking_id, '_matha_patti', true),
+                'Sheesh Patti'   => get_post_meta($inv_booking_id, '_sheesh_patti', true),
+                'Hath Phool'     => get_post_meta($inv_booking_id, '_hath_phool', true),
+                'Pasa'           => get_post_meta($inv_booking_id, '_pasa', true),
+                'Any Other Item' => get_post_meta($inv_booking_id, '_any_other_item', true),
+            );
+            $inv_set_includes_parts = array();
+            foreach ($inv_jewelry as $lbl => $val) {
+                if ($val) $inv_set_includes_parts[] = $lbl . ': ' . $val;
+            }
+            $inv_set_includes = implode(' | ', $inv_set_includes_parts);
+
             $type_labels = array('booking' => __('Booking Invoice', 'kavipushp-bridals'), 'pickup' => __('Pickup Invoice', 'kavipushp-bridals'), 'final' => __('Final Invoice', 'kavipushp-bridals'));
             $type_label = isset($type_labels[$inv->invoice_type]) ? $type_labels[$inv->invoice_type] : ucfirst($inv->invoice_type);
             $biz_name    = get_option('kavipushp_business_name', 'Kavipushp Jewels Rental');
@@ -890,6 +1019,7 @@ function kavipushp_render_invoices_enhanced() {
                         <thead>
                             <tr style="background:#f0f0f0;">
                                 <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;"><?php _e('Item', 'kavipushp-bridals'); ?></th>
+                                <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;"><?php _e('Category', 'kavipushp-bridals'); ?></th>
                                 <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;"><?php _e('Set Code', 'kavipushp-bridals'); ?></th>
                                 <th style="padding:10px; text-align:right; border-bottom:2px solid #ddd;"><?php _e('Amount', 'kavipushp-bridals'); ?></th>
                             </tr>
@@ -897,25 +1027,68 @@ function kavipushp_render_invoices_enhanced() {
                         <tbody>
                             <tr>
                                 <td style="padding:10px; border-bottom:1px solid #eee;"><?php echo esc_html($inv->set_name ?: __('Bridal Jewellery Set', 'kavipushp-bridals')); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee;"><?php echo esc_html(isset($inv->set_category) ? $inv->set_category : ''); ?></td>
                                 <td style="padding:10px; border-bottom:1px solid #eee;"><?php echo esc_html($inv->set_code ?: 'N/A'); ?></td>
                                 <td style="padding:10px; border-bottom:1px solid #eee; text-align:right;">₹<?php echo number_format($inv->rent_amount, 2); ?></td>
                             </tr>
                             <?php if (floatval($inv->booking_amount) > 0): ?>
                             <tr>
-                                <td style="padding:10px; border-bottom:1px solid #eee; color:#e74c3c;" colspan="2"><?php _e('Less: Booking Amount Paid', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; color:#e74c3c;" colspan="3"><?php _e('Less: Booking Amount Paid', 'kavipushp-bridals'); ?></td>
                                 <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; color:#e74c3c;">- ₹<?php echo number_format($inv->booking_amount, 2); ?></td>
                             </tr>
                             <?php endif; ?>
-                            <?php if (floatval($inv->security_deposit) > 0): ?>
+                            <tr style="background:#f9f9f9; font-weight:bold;">
+                                <td style="padding:12px 10px; border-bottom:3px solid #8B4513;" colspan="3"><?php _e('Remaining Balance', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:12px 10px; text-align:right; color:#c9a86c; font-size:16px; border-bottom:3px solid #8B4513;">₹<?php echo number_format($inv->grand_total, 2); ?></td>
+                            </tr>
+                            <?php if ($inv->invoice_type === 'pickup'):
+                                $sec = floatval($inv->security_deposit);
+                                $grand = floatval($inv->grand_total);
+                                $total_received = $grand + $sec;
+                            ?>
                             <tr>
-                                <td style="padding:10px; border-bottom:1px solid #eee;" colspan="2"><?php _e('Security Deposit (Refundable)', 'kavipushp-bridals'); ?></td>
-                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right;">₹<?php echo number_format($inv->security_deposit, 2); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; font-weight:600; color:#555;" colspan="3"><?php _e('Remaining Rent Received', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; font-weight:600; color:#555;">₹<?php echo number_format($grand, 2); ?></td>
+                            </tr>
+                            <?php if ($sec > 0): ?>
+                            <tr>
+                                <td style="padding:10px; border-bottom:1px solid #eee; font-weight:600; color:#2980b9;" colspan="3"><?php _e('Security Received', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; font-weight:600; color:#2980b9;">₹<?php echo number_format($sec, 2); ?></td>
                             </tr>
                             <?php endif; ?>
-                            <tr style="background:#f9f9f9; font-weight:bold;">
-                                <td style="padding:12px 10px;" colspan="2"><?php _e('Grand Total', 'kavipushp-bridals'); ?></td>
-                                <td style="padding:12px 10px; text-align:right; color:#c9a86c; font-size:16px;">₹<?php echo number_format($inv->grand_total, 2); ?></td>
+                            <tr>
+                                <td style="padding:10px; font-weight:bold; color:#27ae60;" colspan="3"><?php _e('Total Amount Received on Pickup', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; text-align:right; font-weight:bold; color:#27ae60;">₹<?php echo number_format($total_received, 2); ?></td>
                             </tr>
+                            <?php elseif ($inv->invoice_type === 'final'):
+                                $sec_f = floatval($inv->security_deposit);
+                                $grand_f = floatval($inv->grand_total);
+                                $dp_f = floatval($inv->damages_paid ?? 0);
+                                $total_recvd_f = $grand_f + $sec_f;
+                                $sec_refund = $sec_f - $dp_f;
+                                $refund_color = $sec_refund >= 0 ? '#27ae60' : '#e74c3c';
+                            ?>
+                            <?php if ($sec_f > 0): ?>
+                            <tr>
+                                <td style="padding:10px; border-bottom:1px solid #eee; font-weight:600; color:#2980b9;" colspan="3"><?php _e('Security Received on Pickup', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; font-weight:600; color:#2980b9;">₹<?php echo number_format($sec_f, 2); ?></td>
+                            </tr>
+                            <?php endif; ?>
+                            <tr>
+                                <td style="padding:10px; border-bottom:1px solid #eee; font-weight:bold; color:#27ae60;" colspan="3"><?php _e('Total Received on Pickup', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; font-weight:bold; color:#27ae60;">₹<?php echo number_format($total_recvd_f, 2); ?></td>
+                            </tr>
+                            <?php if ($dp_f > 0): ?>
+                            <tr>
+                                <td style="padding:10px; border-bottom:1px solid #eee; color:#e74c3c;" colspan="3"><?php _e('Less: Damage Charges', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; color:#e74c3c;">- ₹<?php echo number_format($dp_f, 2); ?></td>
+                            </tr>
+                            <?php endif; ?>
+                            <tr>
+                                <td style="padding:10px; font-weight:bold; color:<?php echo $refund_color; ?>;" colspan="3"><?php _e('Security Refund after Damage Charges', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; text-align:right; font-weight:bold; color:<?php echo $refund_color; ?>;">₹<?php echo number_format($sec_refund, 2); ?></td>
+                            </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
 
@@ -950,13 +1123,144 @@ function kavipushp_render_invoices_enhanced() {
                 </div>
 
                 <div style="margin-top:20px; display:flex; gap:10px;">
-                    <button class="button button-primary button-large" onclick="window.print()">
+                    <button class="button button-primary button-large" onclick="printSavedInvoiceClean()">
                         <i class="dashicons dashicons-printer"></i> <?php _e('Print Invoice', 'kavipushp-bridals'); ?>
                     </button>
                     <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices'); ?>" class="button button-large">
                         <i class="dashicons dashicons-arrow-left-alt"></i> <?php _e('Back to Invoices', 'kavipushp-bridals'); ?>
                     </a>
                 </div>
+                <script>
+                function printSavedInvoiceClean() {
+                    var bizName    = <?php echo wp_json_encode($biz_name); ?>;
+                    var bizAddress = <?php echo wp_json_encode($biz_address); ?>;
+                    var bizPhone   = <?php echo wp_json_encode($biz_phone); ?>;
+                    var bizEmail   = <?php echo wp_json_encode($biz_email); ?>;
+                    var typeLabel  = <?php echo wp_json_encode($type_label); ?>;
+                    var invNum     = <?php echo wp_json_encode($inv->invoice_number); ?>;
+                    var invDate    = <?php echo wp_json_encode(date('d/m/Y', strtotime($inv->created_at))); ?>;
+
+                    var name       = <?php echo wp_json_encode($inv->customer_name); ?>;
+                    var phone      = <?php echo wp_json_encode($inv->customer_phone); ?>;
+                    var email      = <?php echo wp_json_encode($inv->customer_email ?: ''); ?>;
+                    var address    = <?php echo wp_json_encode($inv->customer_address ?: 'N/A'); ?>;
+
+                    var funcDate   = <?php echo wp_json_encode($inv->function_date && $inv->function_date !== '0000-00-00' ? date('d/m/Y', strtotime($inv->function_date)) : ''); ?>;
+                    var pickDate   = <?php echo wp_json_encode($inv->pickup_date && $inv->pickup_date !== '0000-00-00' ? date('d/m/Y', strtotime($inv->pickup_date)) : ''); ?>;
+                    var retDate    = <?php echo wp_json_encode($inv->return_date && $inv->return_date !== '0000-00-00' ? date('d/m/Y', strtotime($inv->return_date)) : ''); ?>;
+
+                    var setName    = <?php echo wp_json_encode($inv->set_name ?: 'Bridal Jewellery Set'); ?>;
+                    var setCode    = <?php echo wp_json_encode($inv->set_code ?: ''); ?>;
+                    var setCategory = <?php echo wp_json_encode(isset($inv->set_category) ? $inv->set_category : ''); ?>;
+                    var rent          = <?php echo floatval($inv->rent_amount); ?>;
+                    var bookingAmt    = <?php echo floatval($inv->booking_amount); ?>;
+                    var secDep        = <?php echo floatval($inv->security_deposit); ?>;
+                    var amountReceived = <?php echo floatval($inv->amount_received ?? 0); ?>;
+                    var damagesPaid   = <?php echo floatval($inv->damages_paid ?? 0); ?>;
+                    var grandTotal    = <?php echo floatval($inv->grand_total); ?>;
+                    var customization = <?php echo wp_json_encode($inv->customization_notes ?: ''); ?>;
+                    var stylist    = <?php echo wp_json_encode($inv->stylist_name ?: ''); ?>;
+                    var setIncludes = <?php echo wp_json_encode($inv_set_includes); ?>;
+
+                    var footerNotes = {
+                        booking: 'This is a booking confirmation invoice. Remaining amount to be paid at the time of pickup.',
+                        pickup:  'This is a pickup invoice. Please ensure all items are in good condition.',
+                        final:   'This is the final settlement invoice. Thank you for renting with us!'
+                    };
+                    var invType = <?php echo wp_json_encode($inv->invoice_type); ?>;
+                    var footerNote = footerNotes[invType] || '';
+
+                    // Build table rows
+                    var tableRows = '<tr><td>' + setName + '</td><td>' + setCategory + '</td><td>' + setCode + '</td><td style="text-align:right;">\u20B9' + rent.toLocaleString('en-IN') + '</td></tr>';
+                    if (bookingAmt > 0) {
+                        tableRows += '<tr><td colspan="3" style="color:#e74c3c;">Less: Booking Amount</td><td style="text-align:right;color:#e74c3c;">- \u20B9' + bookingAmt.toLocaleString('en-IN') + '</td></tr>';
+                    }
+                    tableRows += '<tr class="total-row"><td colspan="3" style="border-bottom:3px solid #8B4513;">Remaining Balance</td><td style="text-align:right;border-bottom:3px solid #8B4513;">\u20B9' + grandTotal.toLocaleString('en-IN') + '</td></tr>';
+                    if (invType === 'pickup') {
+                        tableRows += '<tr><td colspan="3" style="font-weight:600;background:#f5f5f5;color:#555;">Remaining Rent Received</td><td style="text-align:right;font-weight:600;background:#f5f5f5;color:#555;">\u20B9' + grandTotal.toLocaleString('en-IN') + '</td></tr>';
+                        if (secDep > 0) {
+                            tableRows += '<tr><td colspan="3" style="font-weight:600;background:#f5f5f5;color:#2980b9;">Security Received</td><td style="text-align:right;font-weight:600;background:#f5f5f5;color:#2980b9;">\u20B9' + secDep.toLocaleString('en-IN') + '</td></tr>';
+                        }
+                        var totalReceived = grandTotal + secDep;
+                        tableRows += '<tr><td colspan="3" style="font-weight:bold;font-size:13px;color:#27ae60;">Total Amount Received on Pickup</td><td style="text-align:right;font-weight:bold;font-size:13px;color:#27ae60;">\u20B9' + totalReceived.toLocaleString('en-IN') + '</td></tr>';
+                    } else if (invType === 'final') {
+                        var totalRecvd = grandTotal + secDep;
+                        var secRefund = secDep - damagesPaid;
+                        if (secDep > 0) {
+                            tableRows += '<tr><td colspan="3" style="font-weight:600;color:#2980b9;">Security Received on Pickup</td><td style="text-align:right;font-weight:600;color:#2980b9;">\u20B9' + secDep.toLocaleString('en-IN') + '</td></tr>';
+                        }
+                        tableRows += '<tr><td colspan="3" style="font-weight:bold;color:#27ae60;">Total Received on Pickup</td><td style="text-align:right;font-weight:bold;color:#27ae60;">\u20B9' + totalRecvd.toLocaleString('en-IN') + '</td></tr>';
+                        if (damagesPaid > 0) {
+                            tableRows += '<tr><td colspan="3" style="color:#e74c3c;">Less: Damage Charges</td><td style="text-align:right;color:#e74c3c;">- \u20B9' + damagesPaid.toLocaleString('en-IN') + '</td></tr>';
+                        }
+                        var refundColor = secRefund >= 0 ? '#27ae60' : '#e74c3c';
+                        tableRows += '<tr><td colspan="3" style="font-weight:bold;font-size:13px;color:' + refundColor + ';">Security Refund after Damage Charges</td><td style="text-align:right;font-weight:bold;font-size:13px;color:' + refundColor + ';">\u20B9' + secRefund.toLocaleString('en-IN') + '</td></tr>';
+                    }
+
+                    var rentalPeriod = '';
+                    if (funcDate) rentalPeriod += '<p><strong>Function:</strong> ' + funcDate + '</p>';
+                    if (pickDate) rentalPeriod += '<p><strong>Pickup:</strong> ' + pickDate + '</p>';
+                    if (retDate)  rentalPeriod += '<p><strong>Return:</strong> ' + retDate + '</p>';
+
+                    var pw = window.open('', '_blank');
+                    pw.document.write(
+                        '<!DOCTYPE html><html><head><title>' + typeLabel + ' ' + invNum + '</title>' +
+                        '<style>' +
+                        '@page { size: A4; margin: 10mm 12mm; }' +
+                        'html, body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; width: 210mm; max-width: 210mm; }' +
+                        '.header { text-align: center; border-bottom: 2px solid #c9a86c; padding-bottom: 8px; margin-bottom: 10px; }' +
+                        '.header h1 { color: #1a1f36; margin: 0 0 3px 0; font-size: 18px; }' +
+                        '.header p { color: #666; margin: 0; font-size: 11px; line-height: 1.4; }' +
+                        '.header .contact-line { margin-top: 3px; font-size: 10px; }' +
+                        '.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 10px; }' +
+                        '.info-block h3 { color: #c9a86c; margin: 0 0 4px 0; font-size: 11px; text-transform: uppercase; }' +
+                        '.info-block p { margin: 2px 0; color: #333; font-size: 11px; }' +
+                        'table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }' +
+                        'th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #ddd; font-size: 11px; }' +
+                        'th { background: #f5f5f5; font-weight: 600; }' +
+                        '.total-row { font-weight: bold; font-size: 13px; }' +
+                        '.total-row td { border-top: 2px solid #c9a86c; }' +
+                        '.footer { text-align: center; color: #666; font-size: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; }' +
+                        'ol { margin: 4px 0; padding-left: 16px; font-size: 10px; color: #555; line-height: 1.6; }' +
+                        '@media print { html, body { width: 210mm; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }' +
+                        '</style></head><body>' +
+                        '<div class="header"><h1>' + bizName + '</h1>' +
+                        '<p>' + bizAddress + '</p>' +
+                        '<p class="contact-line">\u260E ' + bizPhone + ' &nbsp;|&nbsp; \u2709 ' + bizEmail + '</p></div>' +
+                        '<h2 style="text-align:center;color:#1a1f36;">' + typeLabel.toUpperCase() + '</h2>' +
+                        '<p style="text-align:center;color:#666;">Invoice #: ' + invNum + ' | Date: ' + invDate + '</p>' +
+                        '<div class="info-grid">' +
+                        '<div class="info-block"><h3>Bill To</h3>' +
+                        '<p><strong>' + name + '</strong></p><p>' + phone + '</p>' + (email ? '<p>' + email + '</p>' : '') + '<p>' + address + '</p></div>' +
+                        '<div class="info-block"><h3>Rental Period</h3>' + rentalPeriod + '</div>' +
+                        '</div>' +
+                        (setIncludes ? '<div style="background:#f9f0ff;border:1px solid #e0c8f0;border-radius:6px;padding:12px 15px;margin:10px 0 15px 0;"><strong style="color:#7b4fa6;">Set Includes:</strong> <span style="color:#333;margin-left:6px;">' + setIncludes + '</span></div>' : '') +
+                        '<table><thead><tr><th>Item</th><th>Category</th><th>Set Code</th><th style="text-align:right;">Amount</th></tr></thead>' +
+                        '<tbody>' + tableRows + '</tbody></table>' +
+                        (customization ? '<div style="background:#fff8e1;border:1px solid #f0e68c;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#c9a86c;">Customization:</strong> ' + customization + '</div>' : '') +
+                        (stylist ? '<div style="background:#f0f7ff;border:1px solid #c8dff8;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#2980b9;">Stylist Who Attended:</strong> ' + stylist + '</div>' : '') +
+                        '<div style="margin:8px 0;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fafafa;">' +
+                        '<h5 style="margin:0 0 5px;color:#1a1f36;font-size:11px;">Kavipushp Jewels \u2013 Terms &amp; Conditions</h5>' +
+                        '<ol>' +
+                        '<li>Jewellery is rented only for the period mentioned; late return will be charged per day.</li>' +
+                        '<li>A refundable security deposit may be collected and returned after condition check.</li>' +
+                        '<li>Any damage, loss, or missing parts will be charged as per repair or replacement value.</li>' +
+                        '<li>Full payment must be made before delivery; advance/booking amount is non-refundable.</li>' +
+                        '<li>Customer must provide valid ID proof and is responsible for the safety of the jewellery during the rental period.</li>' +
+                        '<li>All disputes are subject to local jurisdiction.</li>' +
+                        '</ol>' +
+                        '<p style="margin:6px 0 0;font-size:11px;font-weight:bold;color:#333;">Accepted and Agreed By:</p>' +
+                        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:15px;">' +
+                        '<div><div style="border-top:1px solid #333;width:100%;margin-bottom:6px;"></div><p style="margin:0;font-size:12px;color:#555;">Customer Signature &amp; Date</p></div>' +
+                        '<div><div style="border-top:1px solid #333;width:100%;margin-bottom:6px;"></div><p style="margin:0;font-size:12px;color:#555;">Authorized Signatory</p></div>' +
+                        '</div></div>' +
+                        '<div class="footer"><p>Thank you for choosing ' + bizName + '!</p><p>' + footerNote + '</p></div>' +
+                        '<script>window.onload = function() { window.print(); }<\/script>' +
+                        '</body></html>'
+                    );
+                    pw.document.close();
+                }
+                </script>
             </div>
         </div>
         <?php else: ?>
@@ -966,6 +1270,7 @@ function kavipushp_render_invoices_enhanced() {
         <?php elseif ($action === 'generate'): ?>
         <!-- Generate Invoice Form -->
         <?php
+        global $wpdb;
         // Get all bookings for selection
         $all_bookings = get_posts(array(
             'post_type'      => 'booking',
@@ -974,6 +1279,15 @@ function kavipushp_render_invoices_enhanced() {
             'orderby'        => 'date',
             'order'          => 'DESC',
         ));
+        // Fetch security deposit per booking: prefer pickup invoice, fall back to booking invoice
+        $all_sec_invoices = $wpdb->get_results(
+            "SELECT booking_id, security_deposit, invoice_type FROM {$wpdb->prefix}kavipushp_invoices WHERE invoice_type IN ('booking','pickup') ORDER BY FIELD(invoice_type,'booking','pickup'), id ASC"
+        );
+        $pickup_invoices = array();
+        foreach ($all_sec_invoices as $row) {
+            // pickup overwrites booking if both exist
+            $pickup_invoices[$row->booking_id] = floatval($row->security_deposit);
+        }
         ?>
         <div class="kp-card">
             <div class="kp-card-header">
@@ -992,6 +1306,13 @@ function kavipushp_render_invoices_enhanced() {
                                 $b_set_id = get_post_meta($b->ID, '_bridal_set_id', true);
                                 $b_set = $b_set_id ? get_post($b_set_id) : null;
                                 $b_set_name = $b_set ? $b_set->post_title : '';
+                                $b_customized_set = get_post_meta($b->ID, '_customized_bridal_set', true);
+                                $b_set_category = get_post_meta($b->ID, '_bridal_set_category', true);
+                                if (!$b_set_category && $b_set_id) {
+                                    $b_cat_terms = get_the_terms($b_set_id, 'bridal_category');
+                                    $b_set_category = ($b_cat_terms && !is_wp_error($b_cat_terms)) ? $b_cat_terms[0]->name : '';
+                                }
+                                $b_display_name = $b_set_name ?: $b_customized_set;
                                 $b_date = get_the_date('d/m/Y', $b);
                             ?>
                             <option value="<?php echo esc_attr($b->ID); ?>"
@@ -1001,6 +1322,7 @@ function kavipushp_render_invoices_enhanced() {
                                 data-address="<?php echo esc_attr(get_post_meta($b->ID, '_customer_address', true)); ?>"
                                 data-set-name="<?php echo esc_attr($b_set_name); ?>"
                                 data-set-code="<?php echo esc_attr($b_set_id ? get_post_meta($b_set_id, '_set_id', true) : ''); ?>"
+                                data-category="<?php echo esc_attr($b_set_category); ?>"
                                 data-function-date="<?php echo esc_attr(get_post_meta($b->ID, '_function_date', true)); ?>"
                                 data-pickup-date="<?php echo esc_attr(get_post_meta($b->ID, '_pickup_date', true)); ?>"
                                 data-return-date="<?php echo esc_attr(get_post_meta($b->ID, '_return_date', true)); ?>"
@@ -1015,10 +1337,13 @@ function kavipushp_render_invoices_enhanced() {
                                 data-sheesh-patti="<?php echo esc_attr(get_post_meta($b->ID, '_sheesh_patti', true)); ?>"
                                 data-hath-phool="<?php echo esc_attr(get_post_meta($b->ID, '_hath_phool', true)); ?>"
                                 data-pasa="<?php echo esc_attr(get_post_meta($b->ID, '_pasa', true)); ?>"
+                                data-any-other-item="<?php echo esc_attr(get_post_meta($b->ID, '_any_other_item', true)); ?>"
+                                data-customized-bridal-set="<?php echo esc_attr($b_customized_set); ?>"
                                 data-status="<?php echo esc_attr($b_status); ?>"
                                 data-date="<?php echo esc_attr($b_date); ?>"
+                                data-pickup-security="<?php echo esc_attr(isset($pickup_invoices[$b->ID]) ? $pickup_invoices[$b->ID] : 0); ?>"
                                 <?php selected($invoice_booking_id, $b->ID); ?>>
-                                <?php echo esc_html($b_name . ' - ' . $b_set_name . ' (' . $b_date . ') [' . strtoupper($b_status) . ']'); ?>
+                                <?php echo esc_html($b_name . ' - ' . $b_display_name . ' (' . $b_date . ') [' . strtoupper($b_status) . ']'); ?>
                             </option>
                             <?php endforeach; ?>
                         </select>
@@ -1042,14 +1367,19 @@ function kavipushp_render_invoices_enhanced() {
                         </div>
                     </div>
 
+                    <div id="security-amount-group" class="kp-form-group" style="display: none;">
+                        <label><strong><?php _e('Security Amount (₹)', 'kavipushp-bridals'); ?></strong></label>
+                        <input type="number" id="security_amount" value="0" min="0" onchange="updateInvoicePreview()" style="padding: 6px 10px; width: 200px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+
                     <div id="amount-received-group" class="kp-form-group" style="display: none;">
-                        <label><strong><?php _e('Amount Received (₹)', 'kavipushp-bridals'); ?></strong></label>
+                        <label><strong id="amount-received-label"><?php _e('Amount Received at Pickup (₹)', 'kavipushp-bridals'); ?></strong></label>
                         <input type="number" id="amount_received" value="0" min="0" onchange="updateInvoicePreview()" style="padding: 6px 10px; width: 200px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
 
-                    <div id="damages-amount-group" class="kp-form-group" style="display: none;">
-                        <label><strong><?php _e('Damages Amount (₹)', 'kavipushp-bridals'); ?></strong></label>
-                        <input type="number" id="damages_amount" value="0" min="0" onchange="updateInvoicePreview()" style="padding: 6px 10px; width: 200px; border: 1px solid #ddd; border-radius: 4px;">
+                    <div id="damages-paid-group" class="kp-form-group" style="display: none;">
+                        <label><strong><?php _e('Damages Charges (₹)', 'kavipushp-bridals'); ?></strong></label>
+                        <input type="number" id="damages_paid" value="0" min="0" onchange="updateInvoicePreview()" style="padding: 6px 10px; width: 200px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
 
                     <div id="set-image-group" class="kp-form-group">
@@ -1110,6 +1440,7 @@ function kavipushp_render_invoices_enhanced() {
                             <thead>
                                 <tr style="background: #f0f0f0;">
                                     <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;"><?php _e('Item', 'kavipushp-bridals'); ?></th>
+                                    <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;"><?php _e('Category', 'kavipushp-bridals'); ?></th>
                                     <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;"><?php _e('Set Code', 'kavipushp-bridals'); ?></th>
                                     <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;"><?php _e('Amount', 'kavipushp-bridals'); ?></th>
                                 </tr>
@@ -1125,6 +1456,30 @@ function kavipushp_render_invoices_enhanced() {
                         <div id="inv-stylist" style="display: none; background: #f0f7ff; border: 1px solid #c8dff8; border-radius: 6px; padding: 12px 15px; margin: 15px 0;">
                             <strong style="color: #2980b9;"><i class="dashicons dashicons-admin-users" style="font-size: 14px;"></i> <?php _e('Stylist Who Attended:', 'kavipushp-bridals'); ?></strong>
                             <span id="inv-stylist-text" style="color: #333; margin-left: 5px;"></span>
+                        </div>
+
+                        <!-- Important to Note Customers -->
+                        <div id="inv-important-note" style="margin: 20px 0; padding: 15px; border: 2px solid #e74c3c; border-radius: 8px; background: #fff8f8;">
+                            <h5 style="margin: 0 0 12px; color: #e74c3c; font-size: 14px; font-weight: bold; border-bottom: 1px solid #f5c6c6; padding-bottom: 8px;"><?php _e('Important to Note Customers', 'kavipushp-bridals'); ?></h5>
+                            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                <tr>
+                                    <td style="padding: 6px 0; color: #333; font-weight: 500;"><?php _e('Remaining Bridal Rent', 'kavipushp-bridals'); ?></td>
+                                    <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #333;">&#8377;<span id="inv-note-remaining-rent">0</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #333; font-weight: 500;"><?php _e('Security to be Paid on Pickup', 'kavipushp-bridals'); ?></td>
+                                    <td style="padding: 6px 0; text-align: right;">
+                                        <span style="font-weight: bold; color: #333;">&#8377;</span><input type="number" id="inv-security-pickup" value="0" min="0" style="width: 100px; padding: 3px 6px; border: 1px solid #e74c3c; border-radius: 4px; text-align: right; font-weight: bold;" oninput="onSecurityPickupInput()">
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2" style="padding: 4px 0;"><hr style="border: none; border-top: 1.5px solid #e74c3c; margin: 4px 0;"></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #e74c3c; font-weight: bold; font-size: 14px;"><?php _e('Total to be Paid by Customer on Pickup', 'kavipushp-bridals'); ?></td>
+                                    <td style="padding: 6px 0; text-align: right; font-weight: bold; font-size: 14px; color: #e74c3c;">&#8377;<span id="inv-note-total-pickup">0</span></td>
+                                </tr>
+                            </table>
                         </div>
 
                         <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 6px; background: #fafafa;">
@@ -1229,16 +1584,18 @@ function kavipushp_render_invoices_enhanced() {
             }
         });
 
-        function getInvoiceConfig(type, rent, bookingAmount, amountReceived, damagesAmount, paymentStatus) {
-            var securityDeposit = 2000;
+        function getInvoiceConfig(type, rent, bookingAmount, amountReceived, damagesAmount, paymentStatus, securityDeposit, damagesPaid) {
+            securityDeposit = securityDeposit || 0;
             amountReceived = amountReceived || 0;
             damagesAmount = damagesAmount || 0;
+            damagesPaid = damagesPaid || 0;
             paymentStatus = paymentStatus || 'all_paid';
             var config = {
                 title: '',
                 prefix: '',
                 rows: [],
                 grandTotal: 0,
+                grandTotalLabel: 'Remaining Balance',
                 afterTotalRows: [],
                 footerNote: ''
             };
@@ -1263,15 +1620,14 @@ function kavipushp_render_invoices_enhanced() {
                 if (bookingAmount > 0) {
                     rows.push({ label: 'Less: Booking Amount', amount: bookingAmount, color: '#e74c3c', isDeduction: true });
                 }
-                rows.push({ label: 'Security Deposit (Refundable)', amount: securityDeposit, color: '#2980b9' });
                 config.rows = rows;
-                config.grandTotal = rent - bookingAmount + securityDeposit;
-                var balance = config.grandTotal - amountReceived;
-                config.afterTotalRows = [
-                    { label: 'Less: Amount Received', amount: amountReceived, color: '#27ae60', isDeduction: true },
-                    { label: 'Balance Amount', amount: balance, color: '#e74c3c', isBold: true }
-                ];
-                config.footerNote = 'Security deposit of \u20B92,000 will be refunded upon safe return of jewelry.';
+                config.grandTotal = rent - bookingAmount;
+                config.afterTotalRows = [];
+                config.afterTotalRows.push({ label: 'Remaining Bridal Rent', amount: config.grandTotal, color: '#555', isSubtotal: true });
+                config.afterTotalRows.push({ label: 'Security to be Paid on Pickup', amount: securityDeposit, color: '#2980b9', isSubtotal: true });
+                var totalReceived = config.grandTotal + securityDeposit;
+                config.afterTotalRows.push({ label: 'Total to be Paid by Customer on Pickup', amount: totalReceived, color: '#27ae60', isBold: true });
+                config.footerNote = 'Security amount will be adjusted in final payment.';
             } else if (type === 'final') {
                 config.title = 'FINAL INVOICE';
                 config.prefix = 'FN';
@@ -1279,23 +1635,23 @@ function kavipushp_render_invoices_enhanced() {
                     { label: 'Bridal Set Rent', amount: rent, color: '' }
                 ];
                 if (bookingAmount > 0) {
-                    rows.push({ label: 'Less: Booking Amount Paid', amount: bookingAmount, color: '#e74c3c', isDeduction: true });
+                    rows.push({ label: 'Less: Booking Amount', amount: bookingAmount, color: '#e74c3c', isDeduction: true });
                 }
-                rows.push({ label: 'Security Deposit (Refundable)', amount: securityDeposit, color: '#2980b9' });
                 config.rows = rows;
-                config.grandTotal = rent - bookingAmount + securityDeposit;
-                var securityRefund = securityDeposit - damagesAmount;
-                var balance = config.grandTotal - securityRefund;
-                var isAllPaid = paymentStatus === 'all_paid';
-                var statusMsg = isAllPaid ? '\u2705 All Clear' : '\u26A0 Pending';
-                config.afterTotalRows = [
-                    { label: 'Less: Security Refund (Security \u2212 Damage Charges)', amount: securityRefund, color: '#27ae60', isDeduction: true },
-                    { label: 'Balance Amount', amount: balance, color: isAllPaid ? '#27ae60' : '#e74c3c', isBold: true },
-                    { label: 'Status', amount: null, statusMsg: statusMsg, isStatus: true }
-                ];
-                config.footerNote = isAllPaid
-                    ? 'All payments cleared. Security deposit refunded. Thank you for choosing our services!'
-                    : 'Payment of \u20B9' + balance.toLocaleString('en-IN') + ' is pending. Please clear dues.';
+                config.grandTotal = rent - bookingAmount;
+                config.grandTotalLabel = 'Remaining Rent Received on Pickup';
+                var totalReceived = config.grandTotal + securityDeposit;
+                var securityRefund = securityDeposit - damagesPaid;
+                config.afterTotalRows = [];
+                config.afterTotalRows.push({ label: 'Total Received on Pickup', amount: totalReceived, color: '#27ae60', isBold: true });
+                if (damagesPaid > 0) {
+                    config.afterTotalRows.push({ label: 'Less: Damage Charges', amount: damagesPaid, color: '#e74c3c', isDeduction: true });
+                }
+                var refundColor = securityRefund >= 0 ? '#27ae60' : '#e74c3c';
+                config.afterTotalRows.push({ label: 'Security Refund after Damage Charges', amount: securityRefund, color: refundColor, isBold: true });
+                config.footerNote = securityRefund >= 0
+                    ? 'Security refund of \u20B9' + securityRefund.toLocaleString('en-IN') + ' to be returned to customer.'
+                    : 'Customer owes \u20B9' + Math.abs(securityRefund).toLocaleString('en-IN') + ' towards damage charges.';
             }
 
             return config;
@@ -1322,27 +1678,40 @@ function kavipushp_render_invoices_enhanced() {
             var rent = parseFloat(opt.dataset.rent) || 0;
             var bookingAmount = parseFloat(opt.dataset.bookingAmount) || 0;
 
-            // Show/hide amount received input (pickup only)
+            // Show/hide security amount and amount received inputs
+            var secAmtGroup = document.getElementById('security-amount-group');
             var amtReceivedGroup = document.getElementById('amount-received-group');
+            var amtReceivedLabel = document.getElementById('amount-received-label');
             if (invoiceType === 'pickup') {
-                amtReceivedGroup.style.display = 'block';
+                if (secAmtGroup) secAmtGroup.style.display = 'block';
+                amtReceivedGroup.style.display = 'none';
+                document.getElementById('amount_received').value = 0;
+            } else if (invoiceType === 'final') {
+                if (secAmtGroup) secAmtGroup.style.display = 'block';
+                var pickupSecurity = parseFloat(opt.dataset.pickupSecurity) || 0;
+                if (pickupSecurity > 0) document.getElementById('security_amount').value = pickupSecurity;
+                amtReceivedGroup.style.display = 'none';
+                document.getElementById('amount_received').value = 0;
             } else {
+                if (secAmtGroup) { secAmtGroup.style.display = 'none'; document.getElementById('security_amount').value = 0; }
                 amtReceivedGroup.style.display = 'none';
                 document.getElementById('amount_received').value = 0;
             }
-            // Show/hide damages amount input (final only)
-            var damagesGroup = document.getElementById('damages-amount-group');
+            // Read securityDeposit AFTER auto-fill so final invoice gets correct value
+            var securityDeposit = parseFloat(document.getElementById('security_amount').value) || 0;
+            // Show/hide damages paid input (final only)
+            var damagesPaidGroup = document.getElementById('damages-paid-group');
             if (invoiceType === 'final') {
-                damagesGroup.style.display = 'block';
+                if (damagesPaidGroup) damagesPaidGroup.style.display = 'block';
             } else {
-                damagesGroup.style.display = 'none';
-                document.getElementById('damages_amount').value = 0;
+                if (damagesPaidGroup) { damagesPaidGroup.style.display = 'none'; document.getElementById('damages_paid').value = 0; }
                 kpPaymentStatus = 'all_paid';
             }
             var amountReceived = parseFloat(document.getElementById('amount_received').value) || 0;
-            var damagesAmount = parseFloat(document.getElementById('damages_amount').value) || 0;
+            var damagesAmount = 0;
+            var damagesPaid = parseFloat(document.getElementById('damages_paid').value) || 0;
 
-            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus);
+            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus, securityDeposit, damagesPaid);
 
             var invNum = config.prefix + '-' + String(bookingId).padStart(5, '0');
 
@@ -1362,7 +1731,8 @@ function kavipushp_render_invoices_enhanced() {
 
             // Set name row
             tbodyHtml += '<tr>' +
-                '<td style="padding: 10px; border-bottom: 1px solid #eee;">' + (opt.dataset.setName || '') + '</td>' +
+                '<td style="padding: 10px; border-bottom: 1px solid #eee;">' + (opt.dataset.setName || opt.dataset.customizedBridalSet || '') + '</td>' +
+                '<td style="padding: 10px; border-bottom: 1px solid #eee;">' + (opt.dataset.category || '') + '</td>' +
                 '<td style="padding: 10px; border-bottom: 1px solid #eee;">' + (opt.dataset.setCode || '') + '</td>' +
                 '<td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;">\u20B9' + rent.toLocaleString('en-IN') + '</td>' +
                 '</tr>';
@@ -1373,15 +1743,15 @@ function kavipushp_render_invoices_enhanced() {
                 var colorStyle = row.color ? ' color: ' + row.color + ';' : '';
                 var amountText = row.isDeduction ? '- \u20B9' + row.amount.toLocaleString('en-IN') : '\u20B9' + row.amount.toLocaleString('en-IN');
                 tbodyHtml += '<tr>' +
-                    '<td style="padding: 10px; border-bottom: 1px solid #eee;' + colorStyle + '" colspan="2">' + row.label + '</td>' +
+                    '<td style="padding: 10px; border-bottom: 1px solid #eee;' + colorStyle + '" colspan="3">' + row.label + '</td>' +
                     '<td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;' + colorStyle + '">' + amountText + '</td>' +
                     '</tr>';
             });
 
-            // Grand total row
+            // Remaining balance row
             tbodyHtml += '<tr style="font-weight: bold; font-size: 16px;">' +
-                '<td style="padding: 12px; border-top: 2px solid #c9a86c;" colspan="2">Grand Total</td>' +
-                '<td style="padding: 12px; text-align: right; border-top: 2px solid #c9a86c;">\u20B9' + config.grandTotal.toLocaleString('en-IN') + '</td>' +
+                '<td style="padding: 12px; border-top: 2px solid #c9a86c; border-bottom: 3px solid #8B4513;" colspan="3">' + (config.grandTotalLabel || 'Remaining Balance') + '</td>' +
+                '<td style="padding: 12px; text-align: right; border-top: 2px solid #c9a86c; border-bottom: 3px solid #8B4513;">\u20B9' + config.grandTotal.toLocaleString('en-IN') + '</td>' +
                 '</tr>';
 
             // After-total rows — collect status row separately, render rest as HTML
@@ -1393,10 +1763,11 @@ function kavipushp_render_invoices_enhanced() {
                     }
                     var colorStyle = row.color ? ' color: ' + row.color + ';' : '';
                     var boldStyle = row.isBold ? ' font-weight: bold; font-size: 15px;' : '';
+                    var subtotalStyle = row.isSubtotal ? ' font-weight: 600; background: #f5f5f5;' : '';
                     var amountText = row.isDeduction ? '- \u20B9' + row.amount.toLocaleString('en-IN') : '\u20B9' + row.amount.toLocaleString('en-IN');
                     tbodyHtml += '<tr>' +
-                        '<td style="padding: 10px; border-bottom: 1px solid #eee;' + colorStyle + boldStyle + '" colspan="2">' + row.label + '</td>' +
-                        '<td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;' + colorStyle + boldStyle + '">' + amountText + '</td>' +
+                        '<td style="padding: 10px; border-bottom: 1px solid #eee;' + colorStyle + boldStyle + subtotalStyle + '" colspan="3">' + row.label + '</td>' +
+                        '<td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;' + colorStyle + boldStyle + subtotalStyle + '">' + amountText + '</td>' +
                         '</tr>';
                 });
             }
@@ -1414,7 +1785,7 @@ function kavipushp_render_invoices_enhanced() {
                 var tr = document.createElement('tr');
 
                 var td1 = document.createElement('td');
-                td1.colSpan = 2;
+                td1.colSpan = 3;
                 td1.style.cssText = 'padding: 10px; border-bottom: 1px solid #eee; font-weight: bold; color: ' + txtColor + ';';
                 td1.textContent = 'Payment Status';
 
@@ -1480,7 +1851,8 @@ function kavipushp_render_invoices_enhanced() {
                 { key: 'mathaPatti',  label: 'Matha Patti' },
                 { key: 'sheeshPatti', label: 'Sheesh Patti' },
                 { key: 'hathPhool',   label: 'Hath Phool' },
-                { key: 'pasa',        label: 'Pasa' }
+                { key: 'pasa',         label: 'Pasa' },
+                { key: 'anyOtherItem', label: 'Any Other Item' }
             ];
             var autoIncludes = [];
             jewelryLabels.forEach(function(j) {
@@ -1500,8 +1872,35 @@ function kavipushp_render_invoices_enhanced() {
 
             document.getElementById('inv-status').innerHTML = '<span style="background: #c9a86c; color: #fff; padding: 5px 15px; border-radius: 4px;">' + config.title + '</span>';
 
+            // Update "Important to Note Customers" section (not shown on pickup invoices)
+            var invImportantNote = document.getElementById('inv-important-note');
+            if (invImportantNote) invImportantNote.style.display = (invoiceType === 'booking') ? 'block' : 'none';
+            var noteRemainingEl = document.getElementById('inv-note-remaining-rent');
+            var secPickupEl = document.getElementById('inv-security-pickup');
+            var noteTotalEl = document.getElementById('inv-note-total-pickup');
+            if (noteRemainingEl) noteRemainingEl.textContent = config.grandTotal.toLocaleString('en-IN');
+            if (secPickupEl && invoiceType === 'final') {
+                secPickupEl.value = securityDeposit;
+            }
+            if (noteTotalEl && secPickupEl) {
+                var secPickupVal = parseFloat(secPickupEl.value) || 0;
+                noteTotalEl.textContent = (config.grandTotal + secPickupVal).toLocaleString('en-IN');
+            }
+
             document.getElementById('invoice-preview').style.display = 'block';
             document.getElementById('invoice-empty').style.display = 'none';
+        }
+
+        function onSecurityPickupInput() {
+            var secPickup = parseFloat(document.getElementById('inv-security-pickup').value) || 0;
+            // Sync to security_amount field so pickup/final invoices use this value
+            var secAmtInput = document.getElementById('security_amount');
+            if (secAmtInput) secAmtInput.value = secPickup;
+            // Update "Total to be Paid" in note section
+            var noteRemainingEl = document.getElementById('inv-note-remaining-rent');
+            var remaining = noteRemainingEl ? (parseFloat(noteRemainingEl.textContent.replace(/,/g, '')) || 0) : 0;
+            var noteTotalEl = document.getElementById('inv-note-total-pickup');
+            if (noteTotalEl) noteTotalEl.textContent = (remaining + secPickup).toLocaleString('en-IN');
         }
 
         function printGeneratedInvoice() {
@@ -1514,10 +1913,13 @@ function kavipushp_render_invoices_enhanced() {
             var phone = opt.dataset.phone || '';
             var email = opt.dataset.email || '';
             var address = opt.dataset.address || 'N/A';
-            var setName = opt.dataset.setName || '';
+            var setName = opt.dataset.setName || opt.dataset.customizedBridalSet || '';
             var setCode = opt.dataset.setCode || '';
+            var setCategory = opt.dataset.category || '';
             var rent = parseFloat(opt.dataset.rent) || 0;
             var bookingAmount = parseFloat(opt.dataset.bookingAmount) || 0;
+            var securityDeposit = parseFloat(document.getElementById('security_amount').value) || 0;
+            var securityPickup = parseFloat(document.getElementById('inv-security-pickup').value) || 0;
             var functionDate = formatDate(opt.dataset.functionDate);
             var pickupDate = formatDate(opt.dataset.pickupDate);
             var returnDate = formatDate(opt.dataset.returnDate);
@@ -1533,7 +1935,8 @@ function kavipushp_render_invoices_enhanced() {
                 { key: 'mathaPatti',  label: 'Matha Patti' },
                 { key: 'sheeshPatti', label: 'Sheesh Patti' },
                 { key: 'hathPhool',   label: 'Hath Phool' },
-                { key: 'pasa',        label: 'Pasa' }
+                { key: 'pasa',         label: 'Pasa' },
+                { key: 'anyOtherItem', label: 'Any Other Item' }
             ];
             var _autoIncludes = [];
             _jewelryLabels.forEach(function(j) {
@@ -1543,30 +1946,31 @@ function kavipushp_render_invoices_enhanced() {
             var setIncludes = _autoIncludes.join(' | ') || document.getElementById('set_includes').value.trim();
 
             var amountReceived = parseFloat(document.getElementById('amount_received').value) || 0;
-            var damagesAmount = parseFloat(document.getElementById('damages_amount').value) || 0;
-            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus);
+            var damagesAmount = 0;
+            var damagesPaid = parseFloat(document.getElementById('damages_paid').value) || 0;
+            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus, securityDeposit, damagesPaid);
             var invNum = config.prefix + '-' + String(opt.value).padStart(5, '0');
 
             // Build table rows for print
-            var tableRows = '<tr><td>' + setName + '</td><td>' + setCode + '</td><td style="text-align:right;">\u20B9' + rent.toLocaleString('en-IN') + '</td></tr>';
+            var tableRows = '<tr><td>' + setName + '</td><td>' + setCategory + '</td><td>' + setCode + '</td><td style="text-align:right;">\u20B9' + rent.toLocaleString('en-IN') + '</td></tr>';
             config.rows.forEach(function(row, index) {
                 if (index === 0) return;
                 var colorStyle = row.color ? ' style="color:' + row.color + ';"' : '';
                 var amountText = row.isDeduction ? '- \u20B9' + row.amount.toLocaleString('en-IN') : '\u20B9' + row.amount.toLocaleString('en-IN');
-                tableRows += '<tr><td colspan="2"' + colorStyle + '>' + row.label + '</td><td style="text-align:right;' + (row.color ? 'color:' + row.color + ';' : '') + '">' + amountText + '</td></tr>';
+                tableRows += '<tr><td colspan="3"' + colorStyle + '>' + row.label + '</td><td style="text-align:right;' + (row.color ? 'color:' + row.color + ';' : '') + '">' + amountText + '</td></tr>';
             });
-            tableRows += '<tr class="total-row"><td colspan="2">Grand Total</td><td style="text-align:right;">\u20B9' + config.grandTotal.toLocaleString('en-IN') + '</td></tr>';
+            tableRows += '<tr class="total-row"><td colspan="3" style="border-bottom:3px solid #8B4513;">' + (config.grandTotalLabel || 'Remaining Balance') + '</td><td style="text-align:right;border-bottom:3px solid #8B4513;">\u20B9' + config.grandTotal.toLocaleString('en-IN') + '</td></tr>';
             if (config.afterTotalRows && config.afterTotalRows.length > 0) {
                 config.afterTotalRows.forEach(function(row) {
                     if (row.isStatus) {
                         var isAllClear = row.statusMsg.indexOf('All Clear') !== -1;
-                        tableRows += '<tr><td colspan="3" style="text-align:center; font-weight:bold; font-size:16px; padding:12px; background:' + (isAllClear ? '#e8f5e9; color:#27ae60;' : '#fff3e0; color:#e67e22;') + '">' + row.statusMsg + '</td></tr>';
+                        tableRows += '<tr><td colspan="4" style="text-align:center; font-weight:bold; font-size:16px; padding:12px; background:' + (isAllClear ? '#e8f5e9; color:#27ae60;' : '#fff3e0; color:#e67e22;') + '">' + row.statusMsg + '</td></tr>';
                         return;
                     }
                     var colorStyle = row.color ? ' color:' + row.color + ';' : '';
                     var boldStyle = row.isBold ? ' font-weight:bold;' : '';
                     var amountText = row.isDeduction ? '- \u20B9' + row.amount.toLocaleString('en-IN') : '\u20B9' + row.amount.toLocaleString('en-IN');
-                    tableRows += '<tr><td colspan="2" style="' + colorStyle + boldStyle + '">' + row.label + '</td><td style="text-align:right;' + colorStyle + boldStyle + '">' + amountText + '</td></tr>';
+                    tableRows += '<tr><td colspan="3" style="' + colorStyle + boldStyle + '">' + row.label + '</td><td style="text-align:right;' + colorStyle + boldStyle + '">' + amountText + '</td></tr>';
                 });
             }
 
@@ -1612,10 +2016,20 @@ function kavipushp_render_invoices_enhanced() {
                 '</div>' +
                 (kpSetImage ? '<div style="text-align:center;margin:15px 0;"><img src="' + kpSetImage + '" style="max-width:200px;max-height:160px;border:1px solid #ddd;border-radius:6px;"></div>' : '') +
                 (setIncludes ? '<div style="background:#f9f0ff;border:1px solid #e0c8f0;border-radius:6px;padding:12px 15px;margin:10px 0 15px 0;"><strong style="color:#7b4fa6;">Set Includes:</strong> <span style="color:#333;margin-left:6px;">' + setIncludes + '</span></div>' : '') +
-                '<table><thead><tr><th>Item</th><th>Set Code</th><th style="text-align:right;">Amount</th></tr></thead>' +
+                '<table><thead><tr><th>Item</th><th>Category</th><th>Set Code</th><th style="text-align:right;">Amount</th></tr></thead>' +
                 '<tbody>' + tableRows + '</tbody></table>' +
                 (customization.trim() ? '<div style="background:#fff8e1;border:1px solid #f0e68c;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#c9a86c;">Customization:</strong> ' + customization + '</div>' : '') +
                 (stylist.trim() ? '<div style="background:#f0f7ff;border:1px solid #c8dff8;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#2980b9;">Stylist Who Attended:</strong> ' + stylist + '</div>' : '') +
+                (invoiceType === 'booking' ?
+                '<div style="margin:8px 0;padding:10px 12px;border:2px solid #e74c3c;border-radius:6px;background:#fff8f8;">' +
+                '<h5 style="margin:0 0 8px;color:#e74c3c;font-size:12px;font-weight:bold;border-bottom:1px solid #f5c6c6;padding-bottom:5px;">Important to Note Customers</h5>' +
+                '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+                '<tr><td style="padding:4px 0;color:#333;font-weight:500;">Remaining Bridal Rent</td><td style="text-align:right;font-weight:bold;color:#333;">\u20B9' + config.grandTotal.toLocaleString('en-IN') + '</td></tr>' +
+                '<tr><td style="padding:4px 0;color:#333;font-weight:500;">Security to be Paid on Pickup</td><td style="text-align:right;font-weight:bold;color:#333;">\u20B9' + securityPickup.toLocaleString('en-IN') + '</td></tr>' +
+                '<tr><td colspan="2"><hr style="border:none;border-top:1.5px solid #e74c3c;margin:4px 0;"></td></tr>' +
+                '<tr><td style="padding:4px 0;color:#e74c3c;font-weight:bold;font-size:12px;">Total to be Paid by Customer on Pickup</td><td style="text-align:right;font-weight:bold;font-size:12px;color:#e74c3c;">\u20B9' + (config.grandTotal + securityPickup).toLocaleString('en-IN') + '</td></tr>' +
+                '</table></div>'
+                : '') +
                 '<div style="margin:8px 0;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fafafa;">' +
                 '<h5 style="margin:0 0 5px;color:#1a1f36;font-size:11px;">Kavipushp Jewels \u2013 Terms &amp; Conditions</h5>' +
                 '<ol style="margin:0;padding-left:16px;font-size:10px;color:#555;line-height:1.6;">' +
@@ -1651,9 +2065,13 @@ function kavipushp_render_invoices_enhanced() {
             var invoiceType = getSelectedInvoiceType();
             var rent = parseFloat(opt.dataset.rent) || 0;
             var bookingAmount = parseFloat(opt.dataset.bookingAmount) || 0;
+            var securityDeposit = invoiceType === 'booking'
+                ? (parseFloat(document.getElementById('inv-security-pickup').value) || 0)
+                : (parseFloat(document.getElementById('security_amount').value) || 0);
             var amountReceived = parseFloat(document.getElementById('amount_received').value) || 0;
-            var damagesAmount = parseFloat(document.getElementById('damages_amount').value) || 0;
-            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus);
+            var damagesAmount = 0;
+            var damagesPaid = parseFloat(document.getElementById('damages_paid').value) || 0;
+            var config = getInvoiceConfig(invoiceType, rent, bookingAmount, amountReceived, damagesAmount, kpPaymentStatus, securityDeposit, damagesPaid);
             var invNum = config.prefix + '-' + String(opt.value).padStart(5, '0');
 
             var data = {
@@ -1666,14 +2084,17 @@ function kavipushp_render_invoices_enhanced() {
                 customer_phone: opt.dataset.phone || '',
                 customer_email: opt.dataset.email || '',
                 customer_address: opt.dataset.address || '',
-                set_name: opt.dataset.setName || '',
+                set_name: opt.dataset.setName || opt.dataset.customizedBridalSet || '',
                 set_code: opt.dataset.setCode || '',
+                set_category: opt.dataset.category || '',
                 function_date: opt.dataset.functionDate || '',
                 pickup_date: opt.dataset.pickupDate || '',
                 return_date: opt.dataset.returnDate || '',
                 rent_amount: rent,
                 booking_amount: bookingAmount,
-                security_deposit: (invoiceType === 'booking') ? 0 : 2000,
+                security_deposit: securityDeposit,
+                amount_received: amountReceived,
+                damages_paid: damagesPaid,
                 grand_total: config.grandTotal,
                 customization_notes: opt.dataset.customization || '',
                 stylist_name: opt.dataset.stylist || ''
@@ -1727,9 +2148,23 @@ function kavipushp_render_invoices_enhanced() {
         }
         ?>
 
+        <form method="post" id="kp-invoices-bulk-form">
+            <?php wp_nonce_field('kp_bulk_invoices'); ?>
+            <input type="hidden" name="page" value="kavipushp-invoices">
+
         <div class="kp-card" style="margin-bottom: 24px;">
-            <div class="kp-card-header">
+            <div class="kp-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
                 <h2><i class="dashicons dashicons-media-text"></i> <?php printf(__('Saved Invoices (%d)', 'kavipushp-bridals'), $saved_count); ?></h2>
+                <?php if (!empty($saved_invoices)): ?>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button type="submit" name="bulk_action" value="delete_selected" class="button kp-delete-btn" onclick="return confirm('<?php esc_attr_e('Delete selected invoices?', 'kavipushp-bridals'); ?>')">
+                        <i class="dashicons dashicons-trash"></i> <?php _e('Delete Selected', 'kavipushp-bridals'); ?>
+                    </button>
+                    <button type="submit" name="bulk_action" value="delete_all" class="button" style="background:#e74c3c;color:#fff;border-color:#c0392b;" onclick="return confirm('<?php esc_attr_e('Delete ALL invoices? This cannot be undone!', 'kavipushp-bridals'); ?>')">
+                        <i class="dashicons dashicons-trash"></i> <?php _e('Delete All', 'kavipushp-bridals'); ?>
+                    </button>
+                </div>
+                <?php endif; ?>
             </div>
             <div class="kp-card-body">
                 <?php if (!empty($saved_invoices)): ?>
@@ -1737,6 +2172,7 @@ function kavipushp_render_invoices_enhanced() {
                 <table class="wp-list-table widefat fixed striped" style="min-width:600px;">
                     <thead>
                         <tr>
+                            <th style="width:30px;"><input type="checkbox" id="kp-select-all-invoices" title="<?php esc_attr_e('Select All', 'kavipushp-bridals'); ?>"></th>
                             <th><?php _e('Invoice #', 'kavipushp-bridals'); ?></th>
                             <th><?php _e('Type', 'kavipushp-bridals'); ?></th>
                             <th><?php _e('Customer', 'kavipushp-bridals'); ?></th>
@@ -1754,6 +2190,7 @@ function kavipushp_render_invoices_enhanced() {
                             $type_color = isset($type_colors[$inv->invoice_type]) ? $type_colors[$inv->invoice_type] : '#666';
                         ?>
                         <tr>
+                            <td><input type="checkbox" name="invoice_ids[]" value="<?php echo intval($inv->id); ?>" class="kp-invoice-cb"></td>
                             <td><strong><?php echo esc_html($inv->invoice_number); ?></strong></td>
                             <td><span style="background:<?php echo $type_color; ?>; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px;"><?php echo esc_html($type_label); ?></span></td>
                             <td><?php echo esc_html($inv->customer_name); ?></td>
@@ -1771,6 +2208,11 @@ function kavipushp_render_invoices_enhanced() {
                     </tbody>
                 </table>
                 </div>
+                <script>
+                document.getElementById('kp-select-all-invoices') && document.getElementById('kp-select-all-invoices').addEventListener('change', function() {
+                    document.querySelectorAll('.kp-invoice-cb').forEach(function(cb) { cb.checked = this.checked; }, this);
+                });
+                </script>
                 <?php else: ?>
                 <div style="text-align:center; padding:20px; color:#999;">
                     <i class="dashicons dashicons-media-text" style="font-size:36px; width:36px; height:36px;"></i>
@@ -1779,6 +2221,7 @@ function kavipushp_render_invoices_enhanced() {
                 <?php endif; ?>
             </div>
         </div>
+        </form>
 
         <?php endif; // end generate/list action ?>
     </div>
@@ -2157,11 +2600,51 @@ function kavipushp_save_customer_data($data) {
 
     if (!empty($data['customer_id'])) {
         $wpdb->update($table, $customer_data, array('id' => intval($data['customer_id'])));
-        return intval($data['customer_id']);
+        $saved_id = intval($data['customer_id']);
     } else {
         $wpdb->insert($table, $customer_data);
-        return $wpdb->insert_id;
+        $saved_id = $wpdb->insert_id;
     }
+
+    // Sync return_date to all associated bookings so bookings page reflects the change
+    if ($return_date && $saved_id) {
+        // Match bookings by _customer_id (direct link), then fallback to email/phone
+        $booking_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_customer_id' AND meta_value = %s",
+            $saved_id
+        ));
+        // Fallback: also match by email and phone for older bookings without _customer_id
+        $customer_email = sanitize_email($data['email'] ?? '');
+        $customer_phone = sanitize_text_field($data['contact_number'] ?? '');
+        if ($customer_email) {
+            $ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_customer_email' AND meta_value = %s",
+                $customer_email
+            ));
+            $booking_ids = array_merge($booking_ids, $ids);
+        }
+        if ($customer_phone) {
+            $ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_customer_phone' AND meta_value = %s",
+                $customer_phone
+            ));
+            $booking_ids = array_merge($booking_ids, $ids);
+        }
+        $unique_booking_ids = array_unique($booking_ids);
+        foreach ($unique_booking_ids as $booking_id) {
+            update_post_meta($booking_id, '_return_date', $return_date);
+        }
+        // Also sync return_date to saved invoices for those bookings
+        if (!empty($unique_booking_ids)) {
+            $ids_placeholder = implode(',', array_map('intval', $unique_booking_ids));
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$wpdb->prefix}kavipushp_invoices SET return_date = %s WHERE booking_id IN ($ids_placeholder)",
+                $return_date
+            ));
+        }
+    }
+
+    return $saved_id;
 }
 
 function kavipushp_delete_customer($id) {
@@ -2186,6 +2669,11 @@ add_action('wp_ajax_kavipushp_view_booking', function () {
     $set_id = get_post_meta($booking_id, '_bridal_set_id', true);
     $set = $set_id ? get_post($set_id) : null;
     $set_code = $set_id ? get_post_meta($set_id, '_set_id', true) : '';
+    $bv_category = get_post_meta($booking_id, '_bridal_set_category', true);
+    if (!$bv_category && $set_id) {
+        $bv_cat_terms = get_the_terms($set_id, 'bridal_category');
+        $bv_category = ($bv_cat_terms && !is_wp_error($bv_cat_terms)) ? $bv_cat_terms[0]->name : '';
+    }
     $function_date = get_post_meta($booking_id, '_function_date', true);
     $pickup_date = get_post_meta($booking_id, '_pickup_date', true);
     if (!$function_date) $function_date = $pickup_date;
@@ -2197,6 +2685,7 @@ add_action('wp_ajax_kavipushp_view_booking', function () {
         'customer_email'   => get_post_meta($booking_id, '_customer_email', true) ?: 'N/A',
         'customer_address' => get_post_meta($booking_id, '_customer_address', true) ?: 'N/A',
         'set_name'         => $set ? ($set_code ?: $set->post_title) : 'N/A',
+        'set_category'     => $bv_category ?: '',
         'function_date'    => $function_date ? date('d/m/Y', strtotime($function_date)) : 'N/A',
         'pickup_date'      => $pickup_date ? date('d/m/Y', strtotime($pickup_date)) : 'N/A',
         'return_date'      => ($rd = get_post_meta($booking_id, '_return_date', true)) ? date('d/m/Y', strtotime($rd)) : 'N/A',
