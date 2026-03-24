@@ -807,10 +807,16 @@ function kavipushp_render_bookings_management() {
                         <div class="kp-booking-items">
                             <span class="kp-label"><?php _e('Selected Items:', 'kavipushp-bridals'); ?></span>
                             <?php if ($set): ?>
-                            <div class="kp-item-row">
-                                <span class="kp-item-code"><?php echo esc_html($set_code ?: $set->post_title); ?></span>
+                            <div class="kp-item-row" style="flex-wrap:wrap;gap:6px;align-items:center;">
+                                <span class="kp-item-code" style="font-weight:600;"><?php echo esc_html($set->post_title); ?></span>
+                                <?php if ($set_code): ?>
+                                <span class="kp-item-code" style="background:#fef9ec; color:#b7791f; border:1px solid #f6e05e;">
+                                    <i class="dashicons dashicons-tag" style="font-size:12px;width:12px;height:12px;vertical-align:middle;margin-right:2px;"></i>
+                                    <?php echo esc_html($set_code); ?>
+                                </span>
+                                <?php endif; ?>
                                 <?php if ($booking_category): ?>
-                                <span class="kp-item-code" style="background:#e8f4f8; color:#2980b9; margin-left:6px;"><?php echo esc_html($booking_category); ?></span>
+                                <span class="kp-item-code" style="background:#e8f4f8; color:#2980b9;"><?php echo esc_html($booking_category); ?></span>
                                 <?php endif; ?>
                                 <span class="kp-item-price">₹<?php echo number_format($total); ?></span>
                             </div>
