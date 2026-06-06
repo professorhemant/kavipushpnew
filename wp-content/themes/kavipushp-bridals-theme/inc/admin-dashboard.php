@@ -61,6 +61,16 @@ function kavipushp_admin_menu() {
         'kavipushp_render_all_products'
     );
 
+    // ── Category pages ─────────────────────────────────────────────────────────
+    add_submenu_page('kavipushp-dashboard', 'Sheeshpatti',  'Sheeshpatti',  'manage_options', 'kavipushp-sheeshpatti',  'kavipushp_render_sheeshpatti');
+    add_submenu_page('kavipushp-dashboard', 'Maang Teeka',  'Maang Teeka',  'manage_options', 'kavipushp-maang-teeka',  'kavipushp_render_maang_teeka');
+    add_submenu_page('kavipushp-dashboard', 'Maatha Patti', 'Maatha Patti', 'manage_options', 'kavipushp-maatha-patti', 'kavipushp_render_maatha_patti');
+    add_submenu_page('kavipushp-dashboard', 'Groom Haar',   'Groom Haar',   'manage_options', 'kavipushp-groom-haar',   'kavipushp_render_groom_haar');
+    add_submenu_page('kavipushp-dashboard', 'Kalangi',      'Kalangi',      'manage_options', 'kavipushp-kalangi',      'kavipushp_render_kalangi');
+    add_submenu_page('kavipushp-dashboard', 'Borla',        'Borla',        'manage_options', 'kavipushp-borla',        'kavipushp_render_borla');
+    add_submenu_page('kavipushp-dashboard', 'Nath',         'Nath',         'manage_options', 'kavipushp-nath',         'kavipushp_render_nath');
+    add_submenu_page('kavipushp-dashboard', 'Haathphool',   'Haathphool',   'manage_options', 'kavipushp-haathphool',   'kavipushp_render_haathphool');
+
     add_submenu_page(
         'kavipushp-dashboard',
         __('Availability', 'kavipushp-bridals'),
