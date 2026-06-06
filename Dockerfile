@@ -52,6 +52,12 @@ RUN echo "Rebuild stamp: $REBUILD"
 # Copy custom WordPress files
 COPY wp-config.php /var/www/html/wp-config.php
 COPY wp-content /var/www/html/wp-content/
+
+# Explicit overwrite of critical PHP files so they are NEVER served from cache
+COPY wp-content/themes/kavipushp-bridals-theme/inc/admin-dashboard.php \
+     /var/www/html/wp-content/themes/kavipushp-bridals-theme/inc/admin-dashboard.php
+COPY wp-content/themes/kavipushp-bridals-theme/inc/admin-pages.php \
+     /var/www/html/wp-content/themes/kavipushp-bridals-theme/inc/admin-pages.php
 COPY reset-admin.php /var/www/html/reset-admin.php
 COPY reset-pass-temp.php /var/www/html/reset-pass-temp.php
 COPY fix-admin-role.php /var/www/html/fix-admin-role.php
