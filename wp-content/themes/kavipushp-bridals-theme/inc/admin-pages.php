@@ -864,7 +864,11 @@ function kavipushp_render_inventory() {
         xhr.onload = function() {
             zone.classList.remove('kp-inv-img-uploading');
             input.value = '';
-            var res = JSON.parse(xhr.responseText);
+            var res;
+            try { res = JSON.parse(xhr.responseText); } catch(e) {
+                alert('Upload error: server returned unexpected response. Check for PHP errors.');
+                return;
+            }
             if (res.success) {
                 var existing = zone.querySelector('img');
                 var placeholder = zone.querySelector('.kp-inv-img-placeholder');
@@ -878,7 +882,7 @@ function kavipushp_render_inventory() {
                     zone.insertBefore(img, zone.querySelector('.kp-inv-img-overlay'));
                 }
                 var overlay = zone.querySelector('.kp-inv-img-overlay');
-                if (!overlay.querySelector('.remove')) {
+                if (overlay && !overlay.querySelector('.remove')) {
                     var btn = document.createElement('button');
                     btn.className = 'kp-inv-img-btn remove';
                     btn.type = 'button';
