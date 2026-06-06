@@ -1,4 +1,5 @@
 <?php
+// KP-DASHBOARD-VERSION: v9-categories
 /**
  * Custom Admin Dashboard for Kavipushp Jewels Rental
  *
@@ -230,6 +231,7 @@ function kavipushp_category_submenu_ui() {
     <?php
 }
 add_action('admin_head', 'kavipushp_category_submenu_ui');
+add_action('admin_head', function() { echo '<!-- KP-DASHBOARD-VERSION: v9-categories -->'; });
 
 /**
  * Returns true on any kavipushp-managed admin screen
