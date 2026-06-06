@@ -810,7 +810,16 @@ function kavipushp_render_customers() {
  */
 function kavipushp_render_availability() {
     // Get all bridal sets
-    $sets = get_posts(array('post_type' => 'bridal_set', 'posts_per_page' => -1, 'orderby' => 'title', 'order' => 'ASC'));
+    $sets = get_posts(array('post_type' => 'bridal_set', 'posts_per_page' => -1));
+
+    // Sort by numeric part of _set_id ascending (B0001, B0002, ... B0010, not B1, B10, B2)
+    usort($sets, function($a, $b) {
+        $id_a = get_post_meta($a->ID, '_set_id', true);
+        $id_b = get_post_meta($b->ID, '_set_id', true);
+        $num_a = intval(preg_replace('/[^0-9]/', '', $id_a ?: '999999'));
+        $num_b = intval(preg_replace('/[^0-9]/', '', $id_b ?: '999999'));
+        return $num_a - $num_b;
+    });
 
     // Get all active bookings (pending, confirmed, picked_up) to determine which sets are booked
     $active_bookings = get_posts(array(
