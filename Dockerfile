@@ -46,7 +46,7 @@ RUN { \
 } > /usr/local/etc/php/conf.d/railway-optimized.ini
 
 # Force cache invalidation before COPY (change value below to bust cache)
-ARG REBUILD=20260606-v8
+ARG REBUILD=20260606-v9
 RUN echo "Rebuild stamp: $REBUILD"
 
 # Copy custom WordPress files

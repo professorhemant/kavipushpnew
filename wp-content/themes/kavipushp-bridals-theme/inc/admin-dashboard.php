@@ -137,6 +137,101 @@ function kavipushp_admin_menu() {
 add_action('admin_menu', 'kavipushp_admin_menu');
 
 /**
+ * Inject CSS + JS to make category pages appear as a collapsible
+ * sub-group under "Jewelry Inventory" in the WP admin sidebar.
+ */
+function kavipushp_category_submenu_ui() {
+    $cat_slugs = ['sheeshpatti','maang-teeka','maatha-patti','groom-haar','kalangi','borla','nath','haathphool'];
+    $current   = isset($_GET['page']) ? $_GET['page'] : '';
+    $is_cat    = in_array($current, array_map(fn($s) => 'kavipushp-'.$s, $cat_slugs));
+    ?>
+    <style>
+    /* Hide category items from the flat list — JS will re-inject them */
+    <?php foreach ($cat_slugs as $slug): ?>
+    #adminmenu a[href*="page=kavipushp-<?php echo $slug; ?>"] { display:none !important; }
+    <?php endforeach; ?>
+    /* Toggle row */
+    .kp-cat-toggle {
+        display:block;
+        padding:5px 0 5px 22px;
+        color:#b4a7c9;
+        font-size:11px;
+        font-weight:700;
+        letter-spacing:.6px;
+        text-transform:uppercase;
+        cursor:pointer;
+        user-select:none;
+        border-left:3px solid transparent;
+        transition:color .15s;
+    }
+    .kp-cat-toggle:hover { color:#d7b8f7; }
+    .kp-cat-toggle.open  { color:#d7b8f7; border-left-color:#8e44ad; }
+    /* Category sub-items */
+    .kp-cat-item { display:none; }
+    .kp-cat-item a {
+        display:block !important;
+        padding-left:32px !important;
+        font-size:12px !important;
+        border-left:3px solid #8e44ad !important;
+    }
+    .kp-cat-item.current a,
+    .kp-cat-item a:hover { color:#fff !important; background:#8e44ad22; }
+    </style>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var catSlugs = <?php echo json_encode($cat_slugs); ?>;
+        var isCat   = <?php echo $is_cat ? 'true' : 'false'; ?>;
+
+        // Find the Inventory <li> in the submenu
+        var invA = document.querySelector('#adminmenu a[href*="page=kavipushp-inventory"]');
+        if (!invA) return;
+        var invLi = invA.closest('li');
+        if (!invLi) return;
+
+        // Collect the 8 category <li> elements
+        var catItems = [];
+        catSlugs.forEach(function(slug) {
+            var a = document.querySelector('#adminmenu a[href*="page=kavipushp-' + slug + '"]');
+            if (a) {
+                var li = a.closest('li');
+                if (li) { li.classList.add('kp-cat-item'); catItems.push(li); }
+            }
+        });
+        if (!catItems.length) return;
+
+        // Create the toggle row
+        var toggleLi = document.createElement('li');
+        toggleLi.innerHTML = '<span class="kp-cat-toggle">&#9654; Categories</span>';
+        invLi.parentNode.insertBefore(toggleLi, invLi.nextSibling);
+
+        // Move category items right after the toggle, maintaining order
+        var anchor = toggleLi;
+        catItems.forEach(function(item) {
+            anchor.parentNode.insertBefore(item, anchor.nextSibling);
+            anchor = item;
+        });
+
+        var toggle = toggleLi.querySelector('.kp-cat-toggle');
+        var open   = isCat; // auto-expand if on a category page
+
+        function setOpen(val) {
+            open = val;
+            toggle.innerHTML = (open ? '&#9660;' : '&#9654;') + ' Categories';
+            toggle.classList.toggle('open', open);
+            catItems.forEach(function(item) {
+                item.style.display = open ? '' : 'none';
+            });
+        }
+
+        toggle.addEventListener('click', function() { setOpen(!open); });
+        setOpen(open); // initial state
+    });
+    </script>
+    <?php
+}
+add_action('admin_head', 'kavipushp_category_submenu_ui');
+
+/**
  * Returns true on any kavipushp-managed admin screen
  */
 function kavipushp_is_app_screen() {
