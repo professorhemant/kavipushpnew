@@ -54,11 +54,29 @@ function kavipushp_admin_menu() {
 
     add_submenu_page(
         'kavipushp-dashboard',
+        __('All Products', 'kavipushp-bridals'),
+        __('All Products', 'kavipushp-bridals'),
+        'manage_options',
+        'kavipushp-all-products',
+        'kavipushp_render_all_products'
+    );
+
+    add_submenu_page(
+        'kavipushp-dashboard',
         __('Availability', 'kavipushp-bridals'),
         __('Availability of Sets', 'kavipushp-bridals'),
         'manage_options',
         'kavipushp-availability',
         'kavipushp_render_availability'
+    );
+
+    add_submenu_page(
+        'kavipushp-dashboard',
+        __('Booked Sets & Dates', 'kavipushp-bridals'),
+        __('Booked Sets & Dates', 'kavipushp-bridals'),
+        'manage_options',
+        'kavipushp-booked-sets',
+        'kavipushp_render_booked_sets'
     );
 
     add_submenu_page(
@@ -109,7 +127,201 @@ function kavipushp_admin_menu() {
 add_action('admin_menu', 'kavipushp_admin_menu');
 
 /**
- * Add Home Button to all Kavipushp admin pages
+ * Returns true on any kavipushp-managed admin screen
+ */
+function kavipushp_is_app_screen() {
+    $page      = isset($_GET['page']) ? $_GET['page'] : '';
+    $post_type = isset($_GET['post_type']) ? $_GET['post_type'] : '';
+    if (strpos($page, 'kavipushp-') === 0) return true;
+    if (in_array($post_type, ['booking', 'bridal_set'], true)) return true;
+    // edit.php?post=X case — check post type of the post being edited
+    if (!empty($_GET['post'])) {
+        $pt = get_post_type(intval($_GET['post']));
+        if (in_array($pt, ['booking', 'bridal_set'], true)) return true;
+    }
+    return false;
+}
+
+/**
+ * Custom App Sidebar — injected into all kavipushp admin pages
+ */
+function kavipushp_inject_app_sidebar() {
+    if (!kavipushp_is_app_screen()) return;
+    $page = isset($_GET['page']) ? $_GET['page'] : '';
+
+    $nav = [
+        ['page' => null,                     'url' => home_url('/'),                                         'icon' => 'dashicons-admin-home',    'label' => 'Home'],
+        ['page' => 'kavipushp-customers',    'url' => admin_url('admin.php?page=kavipushp-customers'),       'icon' => 'dashicons-groups',         'label' => 'Customers'],
+        ['page' => 'kavipushp-bookings',     'url' => admin_url('admin.php?page=kavipushp-bookings'),        'icon' => 'dashicons-calendar-alt',   'label' => 'Bookings'],
+        ['page' => 'kavipushp-invoices',     'url' => admin_url('admin.php?page=kavipushp-invoices'),        'icon' => 'dashicons-media-text',     'label' => 'Invoices'],
+        ['page' => 'kavipushp-inventory',    'url' => admin_url('admin.php?page=kavipushp-inventory'),       'icon' => 'dashicons-archive',        'label' => 'Inventory'],
+        ['page' => 'kavipushp-availability', 'url' => admin_url('admin.php?page=kavipushp-availability'),    'icon' => 'dashicons-yes-alt',        'label' => 'Availability of Sets'],
+        ['page' => 'kavipushp-settings',     'url' => admin_url('admin.php?page=kavipushp-settings'),        'icon' => 'dashicons-admin-settings', 'label' => 'Settings'],
+    ];
+    ?>
+    <div id="kp-app-sidebar">
+        <div class="kp-sidebar-logo">
+            <div class="kp-sidebar-brand">
+                <span class="dashicons dashicons-diamond kp-sidebar-diamond"></span>
+                <div>
+                    <div class="kp-sidebar-title">Kavipushp</div>
+                    <div class="kp-sidebar-sub">Jewels Rental</div>
+                </div>
+            </div>
+        </div>
+        <nav class="kp-sidebar-nav">
+            <?php foreach ($nav as $item):
+                $active = !empty($item['page']) && $page === $item['page'];
+            ?>
+            <a href="<?php echo esc_url($item['url']); ?>" class="kp-sidebar-item<?php echo $active ? ' active' : ''; ?>">
+                <span class="dashicons <?php echo esc_attr($item['icon']); ?>"></span>
+                <span><?php echo esc_html($item['label']); ?></span>
+            </a>
+            <?php endforeach; ?>
+        </nav>
+        <div class="kp-sidebar-foot">
+            <a href="<?php echo esc_url(wp_logout_url(home_url('/'))); ?>" class="kp-sidebar-logout">
+                <span class="dashicons dashicons-exit"></span>
+                <span>Logout</span>
+            </a>
+        </div>
+    </div>
+    <?php
+}
+add_action('in_admin_header', 'kavipushp_inject_app_sidebar');
+
+/**
+ * Suppress WP admin chrome on kavipushp pages + inject sidebar CSS
+ */
+function kavipushp_app_layout_css() {
+    if (!kavipushp_is_app_screen()) return;
+    ?>
+    <style>
+        /* ── Hide WordPress chrome ── */
+        #adminmenumain, #adminmenuback, #adminmenushadow,
+        #wpadminbar, #wpfooter, #screen-meta, #screen-meta-links { display: none !important; }
+        html.wp-toolbar { padding-top: 0 !important; }
+        #wpbody  { padding-top: 0 !important; }
+        #wpcontent { margin-left: 0 !important; padding-top: 0 !important; }
+        #wpbody-content { padding-bottom: 0 !important; }
+
+        /* ── Sidebar shell ── */
+        #kp-app-sidebar {
+            position: fixed;
+            top: 0; left: 0;
+            width: 235px;
+            height: 100vh;
+            background: #1a1f36;
+            display: flex;
+            flex-direction: column;
+            z-index: 99999;
+            overflow-y: auto;
+            scrollbar-width: none;
+        }
+        #kp-app-sidebar::-webkit-scrollbar { display: none; }
+
+        /* Logo */
+        .kp-sidebar-logo {
+            padding: 22px 18px 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            flex-shrink: 0;
+        }
+        .kp-sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .kp-sidebar-diamond {
+            font-size: 26px !important;
+            width: 26px !important;
+            height: 26px !important;
+            color: #c9a86c;
+            flex-shrink: 0;
+        }
+        .kp-sidebar-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.1;
+        }
+        .kp-sidebar-sub {
+            font-size: 10px;
+            color: rgba(255,255,255,0.32);
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            margin-top: 3px;
+        }
+
+        /* Nav */
+        .kp-sidebar-nav {
+            flex: 1;
+            padding: 10px 0;
+        }
+        .kp-sidebar-item {
+            display: flex !important;
+            align-items: center !important;
+            gap: 11px !important;
+            padding: 11px 18px !important;
+            color: rgba(255,255,255,0.58) !important;
+            text-decoration: none !important;
+            font-size: 13.5px !important;
+            font-weight: 500 !important;
+            transition: all 0.15s !important;
+            border-left: 3px solid transparent !important;
+            white-space: nowrap !important;
+            box-shadow: none !important;
+        }
+        .kp-sidebar-item:hover {
+            color: #fff !important;
+            background: rgba(255,255,255,0.06) !important;
+            border-left-color: rgba(201,168,108,0.5) !important;
+        }
+        .kp-sidebar-item.active {
+            color: #c9a86c !important;
+            background: rgba(201,168,108,0.1) !important;
+            border-left-color: #c9a86c !important;
+        }
+        .kp-sidebar-item .dashicons {
+            font-size: 17px !important;
+            width: 17px !important;
+            height: 17px !important;
+            flex-shrink: 0;
+        }
+
+        /* Footer */
+        .kp-sidebar-foot {
+            padding: 15px 18px;
+            border-top: 1px solid rgba(255,255,255,0.07);
+            flex-shrink: 0;
+        }
+        .kp-sidebar-logout {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            color: rgba(255,255,255,0.38) !important;
+            text-decoration: none !important;
+            font-size: 13px !important;
+            transition: color 0.15s !important;
+        }
+        .kp-sidebar-logout:hover { color: #e74c3c !important; }
+        .kp-sidebar-logout .dashicons {
+            font-size: 15px !important; width: 15px !important; height: 15px !important;
+        }
+
+        /* ── Push content right ── */
+        body.wp-admin #wpcontent { margin-left: 235px !important; }
+
+        /* Hide old per-page header (sidebar replaces it) */
+        .kavipushp-admin-wrap > .kp-admin-header { display: none !important; }
+        /* Hide old floating home btn */
+        .kp-home-btn-fixed { display: none !important; }
+    </style>
+    <?php
+}
+add_action('admin_head', 'kavipushp_app_layout_css');
+
+/**
+ * (Legacy) Add Home Button to all Kavipushp admin pages
  */
 function kavipushp_admin_home_button() {
     $screen = get_current_screen();
@@ -1216,6 +1428,11 @@ function kavipushp_save_invoice() {
     if (!$cat_col_exists) {
         $wpdb->query("ALTER TABLE $table ADD COLUMN set_category varchar(100) AFTER set_code");
     }
+    // Add security_hold_reason column if not exists
+    $shr_col_exists = $wpdb->get_var("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$wpdb->prefix}kavipushp_invoices' AND COLUMN_NAME = 'security_hold_reason'");
+    if (!$shr_col_exists) {
+        $wpdb->query("ALTER TABLE $table ADD COLUMN security_hold_reason text DEFAULT NULL");
+    }
 
     $data = array(
         'booking_id'          => $booking_id,
@@ -1235,9 +1452,10 @@ function kavipushp_save_invoice() {
         'booking_amount'      => floatval($_POST['booking_amount'] ?? 0),
         'security_deposit'    => floatval($_POST['security_deposit'] ?? 0),
         'amount_received'     => floatval($_POST['amount_received'] ?? 0),
-        'damages_paid'        => floatval($_POST['damages_paid'] ?? 0),
-        'grand_total'         => floatval($_POST['grand_total'] ?? 0),
-        'customization_notes' => sanitize_textarea_field($_POST['customization_notes'] ?? ''),
+        'damages_paid'          => floatval($_POST['damages_paid'] ?? 0),
+        'security_hold_reason'  => sanitize_textarea_field($_POST['security_hold_reason'] ?? ''),
+        'grand_total'           => floatval($_POST['grand_total'] ?? 0),
+        'customization_notes'   => sanitize_textarea_field($_POST['customization_notes'] ?? ''),
         'stylist_name'        => sanitize_text_field($_POST['stylist_name'] ?? ''),
         'status'              => 'generated',
     );
@@ -1255,6 +1473,147 @@ function kavipushp_save_invoice() {
     ));
 }
 add_action('wp_ajax_kavipushp_save_invoice', 'kavipushp_save_invoice');
+
+/**
+ * Resize an image file and return a base64 data URL (for persistent MySQL storage).
+ */
+function kp_encode_image_for_storage($file_path, $max_px = 600) {
+    if (!function_exists('imagecreatefromstring')) return null;
+    $raw = @file_get_contents($file_path);
+    if (!$raw) return null;
+    $src = @imagecreatefromstring($raw);
+    if (!$src) return null;
+    $w = imagesx($src);
+    $h = imagesy($src);
+    if ($w > $max_px || $h > $max_px) {
+        $r  = min($max_px / $w, $max_px / $h);
+        $nw = max(1, (int) round($w * $r));
+        $nh = max(1, (int) round($h * $r));
+        $dst = imagecreatetruecolor($nw, $nh);
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        imagedestroy($src);
+        $src = $dst;
+    }
+    ob_start();
+    imagejpeg($src, null, 82);
+    $jpeg = ob_get_clean();
+    imagedestroy($src);
+    return 'data:image/jpeg;base64,' . base64_encode($jpeg);
+}
+
+/**
+ * AJAX: Upload image for a bridal set.
+ * Saves base64 copy to wp_options so it survives container restarts and Clear All.
+ */
+function kavipushp_upload_set_image() {
+    check_ajax_referer('kp_set_image', '_wpnonce');
+    if (!current_user_can('edit_posts')) wp_send_json_error('Unauthorized');
+
+    $post_id = intval($_POST['post_id'] ?? 0);
+    if (!$post_id) wp_send_json_error('Invalid post ID');
+
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+
+    $attachment_id = media_handle_upload('image', $post_id);
+    if (is_wp_error($attachment_id)) {
+        wp_send_json_error($attachment_id->get_error_message());
+    }
+
+    // Remove old thumbnail attachment to keep media library clean
+    $old_thumb = get_post_thumbnail_id($post_id);
+    set_post_thumbnail($post_id, $attachment_id);
+    if ($old_thumb && $old_thumb !== $attachment_id) {
+        wp_delete_attachment($old_thumb, true);
+    }
+
+    // Save to wp_options so image persists across deploys (MySQL is permanent).
+    // Use the WP-generated medium thumbnail (300px) — same size shown on upload.
+    $set_code = get_post_meta($post_id, '_set_id', true);
+    if ($set_code) {
+        $data_url = null;
+
+        // 1. WordPress medium thumbnail (300px) — preferred
+        $metadata = wp_get_attachment_metadata($attachment_id);
+        if (!empty($metadata['sizes']['medium']['file'])) {
+            $upload_dir = wp_upload_dir();
+            $medium_path = $upload_dir['path'] . '/' . $metadata['sizes']['medium']['file'];
+            if (file_exists($medium_path)) {
+                $raw = @file_get_contents($medium_path);
+                if ($raw) $data_url = 'data:image/jpeg;base64,' . base64_encode($raw);
+            }
+        }
+
+        // 2. GD resize to 300px — fallback if medium thumbnail missing
+        if (!$data_url) {
+            $file_path = get_attached_file($attachment_id);
+            if ($file_path && file_exists($file_path)) {
+                $data_url = kp_encode_image_for_storage($file_path, 300);
+            }
+        }
+
+        // 3. Raw full-size encode — last resort
+        if (!$data_url) {
+            $file_path = get_attached_file($attachment_id);
+            if ($file_path && file_exists($file_path)) {
+                $raw = @file_get_contents($file_path);
+                if ($raw) $data_url = 'data:image/jpeg;base64,' . base64_encode($raw);
+            }
+        }
+
+        if ($data_url) {
+            update_option('kp_setimg_' . sanitize_key($set_code), $data_url, false);
+        }
+    }
+
+    $url = wp_get_attachment_image_url($attachment_id, 'medium');
+    if (!$url) $url = wp_get_attachment_image_url($attachment_id, 'full');
+    if (!$url) $url = wp_get_attachment_url($attachment_id);
+    if (!$url && $set_code) {
+        $url = get_option('kp_setimg_' . sanitize_key($set_code), '');
+    }
+    wp_send_json_success(array('url' => $url, 'attachment_id' => $attachment_id));
+}
+add_action('wp_ajax_kavipushp_upload_set_image', 'kavipushp_upload_set_image');
+
+/**
+ * AJAX: Remove featured image from a bridal set.
+ */
+function kavipushp_remove_set_image() {
+    check_ajax_referer('kp_set_image', '_wpnonce');
+    if (!current_user_can('edit_posts')) wp_send_json_error('Unauthorized');
+
+    $post_id = intval($_POST['post_id'] ?? 0);
+    if (!$post_id) wp_send_json_error('Invalid post ID');
+
+    // Remove from options store
+    $set_code = get_post_meta($post_id, '_set_id', true);
+    if ($set_code) {
+        delete_option('kp_setimg_' . sanitize_key($set_code));
+    }
+
+    $thumb_id = get_post_thumbnail_id($post_id);
+    delete_post_thumbnail($post_id);
+    if ($thumb_id) wp_delete_attachment($thumb_id, true);
+
+    wp_send_json_success();
+}
+add_action('wp_ajax_kavipushp_remove_set_image', 'kavipushp_remove_set_image');
+
+/**
+ * AJAX: Save rental price for a bridal set.
+ */
+function kavipushp_save_set_price() {
+    check_ajax_referer('kp_set_image', '_wpnonce');
+    if (!current_user_can('edit_posts')) wp_send_json_error('Unauthorized');
+    $post_id = intval($_POST['post_id'] ?? 0);
+    if (!$post_id) wp_send_json_error('Invalid post ID');
+    $price = floatval(preg_replace('/[^\d.]/u', '', sanitize_text_field($_POST['price'] ?? '0')));
+    update_post_meta($post_id, '_rental_price', $price);
+    wp_send_json_success(array('price' => $price));
+}
+add_action('wp_ajax_kavipushp_save_set_price', 'kavipushp_save_set_price');
 
 /**
  * AJAX: View Saved Invoice

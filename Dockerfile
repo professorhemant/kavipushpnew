@@ -21,7 +21,31 @@ RUN a2enmod rewrite headers expires
 # Allow .htaccess overrides
 RUN sed -i 's|AllowOverride None|AllowOverride All|g' /etc/apache2/apache2.conf
 
-# Copy custom WordPress files
+# Tune MPM prefork — limit idle/max workers to reduce memory (default is 5-150, we use 1-4)
+RUN { \
+    echo '<IfModule mpm_prefork_module>'; \
+    echo '    StartServers        1'; \
+    echo '    MinSpareServers     1'; \
+    echo '    MaxSpareServers     2'; \
+    echo '    MaxRequestWorkers   4'; \
+    echo '    ServerLimit         4'; \
+    echo '    MaxConnectionsPerChild 500'; \
+    echo '</IfModule>'; \
+} > /etc/apache2/conf-available/mpm-tuning.conf \
+    && a2enconf mpm-tuning
+
+# Set PHP memory limit and disable unused extensions
+RUN { \
+    echo 'memory_limit = 64M'; \
+    echo 'max_execution_time = 30'; \
+    echo 'upload_max_filesize = 8M'; \
+    echo 'post_max_size = 8M'; \
+    echo 'opcache.enable = 1'; \
+    echo 'opcache.memory_consumption = 32'; \
+    echo 'opcache.max_accelerated_files = 2000'; \
+} > /usr/local/etc/php/conf.d/railway-optimized.ini
+
+# Copy custom WordPress files — v6 (cache bust: forces full rebuild)
 COPY wp-config.php /var/www/html/wp-config.php
 COPY wp-content /var/www/html/wp-content/
 COPY reset-admin.php /var/www/html/reset-admin.php

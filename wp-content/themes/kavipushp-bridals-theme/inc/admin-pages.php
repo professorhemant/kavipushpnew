@@ -214,7 +214,7 @@ function kavipushp_render_customers_enhanced() {
                         <h3 class="kp-section-title"><?php _e('Select Existing Customer', 'kavipushp-bridals'); ?></h3>
                         <div class="kp-form-group" style="margin-bottom: 20px;">
                             <label><?php _e('Search & Select Customer', 'kavipushp-bridals'); ?></label>
-                            <select id="select_existing_customer" onchange="fillExistingCustomer(this.value)" style="min-width: 350px; padding: 8px;">
+                            <select id="select_existing_customer" onchange="fillExistingCustomer(this.value)" style="width:100%;max-width:450px;padding:8px;">
                                 <option value=""><?php _e('-- Select existing customer or fill new below --', 'kavipushp-bridals'); ?></option>
                                 <?php foreach ($all_customers as $c): ?>
                                     <option value="<?php echo esc_attr($c->id); ?>"
@@ -456,17 +456,30 @@ function kavipushp_render_inventory() {
         } else {
             $csv_file = $_FILES['inventory_csv']['tmp_name'];
             if (($handle = fopen($csv_file, "r")) !== FALSE) {
-                fgetcsv($handle, 1000, ","); // Skip header row (s.no., title, category, set id/code, rental price)
+                fgetcsv($handle, 1000, ","); // Skip header row
                 $count_new = 0;
                 $count_updated = 0;
                 while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-                    if (empty($data[3])) continue; // Skip if set_id is empty
+                    // Auto-detect CSV format by column count:
+                    // 4-col: Box No [0], Item No/Barcode [1], Item Name [2], Price [3]
+                    // 5-col: s.no [0], Title [1], Category [2], Set ID [3], Price [4]
+                    $col_count = count($data);
+                    if ($col_count >= 5) {
+                        $title     = sanitize_text_field(trim($data[1]));
+                        $category  = sanitize_text_field(trim($data[2]));
+                        $set_id    = sanitize_text_field(trim($data[3]));
+                        $raw_price = isset($data[4]) ? trim($data[4]) : '0';
+                    } else {
+                        $category  = sanitize_text_field(trim($data[0])); // Box No as category
+                        $set_id    = sanitize_text_field(trim($data[1])); // Item No / barcode
+                        $title     = sanitize_text_field(trim($data[2])); // Item Name
+                        $raw_price = isset($data[3]) ? trim($data[3]) : '0';
+                    }
 
-                    // Mapping: s.no. [0], title [1], category [2], set id/code [3], rental price [4]
-                    $title     = sanitize_text_field($data[1]);
-                    $category  = sanitize_text_field($data[2]);
-                    $set_id    = sanitize_text_field($data[3]);
-                    $price     = floatval($data[4]);
+                    if (empty($set_id)) continue; // Skip rows with no barcode
+
+                    // Strip ₹, commas, currency symbols — "₹5,000" → 5000
+                    $price = floatval(preg_replace('/[^\d.]/u', '', $raw_price));
 
                     // Generate title from category + set_id if title is empty
                     if (empty($title)) {
@@ -571,10 +584,21 @@ function kavipushp_render_inventory() {
 
         <div class="kp-card">
             <div class="kp-card-header kp-inventory-header">
-                <div class="kp-inventory-title">
-                    <h2><i class="dashicons dashicons-archive"></i> <?php printf(__('Jewelry Inventory (%d items)', 'kavipushp-bridals'), $total_items); ?></h2>
+                <div class="kp-inventory-title" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                    <!-- View tabs -->
+                    <div style="display:flex;border:2px solid #8e44ad;border-radius:8px;overflow:hidden;">
+                        <button id="kp-tab-cards" onclick="kpSwitchView('cards')"
+                            style="padding:7px 16px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:#8e44ad;color:#fff;">
+                            <i class="dashicons dashicons-grid-view" style="font-size:14px;width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>Card View
+                        </button>
+                        <button id="kp-tab-table" onclick="kpSwitchView('table')"
+                            style="padding:7px 16px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:#fff;color:#8e44ad;">
+                            <i class="dashicons dashicons-list-view" style="font-size:14px;width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>All Products
+                        </button>
+                    </div>
                     <span class="kp-db-indicator">Database</span>
                     <span class="kp-live-badge"><?php _e('Live', 'kavipushp-bridals'); ?></span>
+                    <span style="font-size:13px;color:#888;"><?php echo $total_items; ?> items</span>
                 </div>
                 <div class="kp-inventory-actions">
                     <form method="post" enctype="multipart/form-data" id="kp-inventory-upload-form" action="<?php echo admin_url('admin.php?page=kavipushp-inventory'); ?>" style="display:inline-block;">
@@ -592,6 +616,10 @@ function kavipushp_render_inventory() {
                     <button class="button" onclick="window.location.reload(); return false;">
                         <i class="dashicons dashicons-update"></i> <?php _e('Reload', 'kavipushp-bridals'); ?>
                     </button>
+                    <button class="button button-primary" style="background:#8e44ad;border-color:#7d3c98;" onclick="document.getElementById('kp-bulk-img-input').click()">
+                        <i class="dashicons dashicons-images-alt2"></i> <?php _e('Bulk Upload Images', 'kavipushp-bridals'); ?>
+                    </button>
+                    <input type="file" id="kp-bulk-img-input" accept="image/*" multiple style="display:none;" onchange="kpBulkImagesSelected(this)">
                     <script>
                     function confirmClearAll() {
                         if (confirm('Are you sure you want to clear all <?php echo $total_items; ?> items from inventory? This cannot be undone!')) {
@@ -603,6 +631,11 @@ function kavipushp_render_inventory() {
                 </div>
             </div>
             <div class="kp-card-body">
+                <!-- Bulk Upload Panel (shown after files are selected) -->
+                <div id="kp-bulk-upload-panel" style="display:none;margin-bottom:16px;background:#faf7ff;border:2px solid #8e44ad;border-radius:10px;padding:18px 20px;"></div>
+
+                <!-- ═══ CARD VIEW ═══════════════════════════════════════════════ -->
+                <div id="kp-view-cards">
                 <div class="kp-search-bar">
                     <label><?php _e('Search Jewelry', 'kavipushp-bridals'); ?></label>
                     <input type="text" id="search-inventory" placeholder="<?php esc_attr_e('Search by name, category, or ITEMID...', 'kavipushp-bridals'); ?>">
@@ -614,8 +647,39 @@ function kavipushp_render_inventory() {
                         $rental_price = get_post_meta($set->ID, '_rental_price', true);
                         $categories = get_the_terms($set->ID, 'bridal_category');
                         $category_name = $categories && !is_wp_error($categories) ? $categories[0]->name : 'Uncategorized';
+                        // Options store is the primary source (survives deploys + Clear All)
+                        $thumb_url = $set_code ? get_option('kp_setimg_' . sanitize_key($set_code), '') : '';
+                        if (!$thumb_url) {
+                            $thumb_id = get_post_thumbnail_id($set->ID);
+                            if ($thumb_id) {
+                                $thumb_url = wp_get_attachment_image_url($thumb_id, 'medium');
+                                if (!$thumb_url) $thumb_url = wp_get_attachment_image_url($thumb_id, 'full');
+                                if (!$thumb_url) $thumb_url = wp_get_attachment_url($thumb_id);
+                            }
+                        }
                     ?>
-                    <div class="kp-inv-card">
+                    <div class="kp-inv-card" data-set-code="<?php echo esc_attr($set_code ?: 'KP' . $set->ID); ?>" data-post-id="<?php echo $set->ID; ?>">
+                        <div class="kp-inv-img-zone" onclick="kpTriggerUpload(<?php echo $set->ID; ?>)">
+                            <?php if ($thumb_url): ?>
+                            <img src="<?php echo esc_attr($thumb_url); ?>" alt="<?php echo esc_attr($set->post_title); ?>">
+                            <?php else: ?>
+                            <div class="kp-inv-img-placeholder">
+                                <span class="dashicons dashicons-camera"></span>
+                                <span>Add Photo</span>
+                            </div>
+                            <?php endif; ?>
+                            <div class="kp-inv-img-overlay">
+                                <button class="kp-inv-img-btn" type="button" onclick="event.stopPropagation(); kpTriggerUpload(<?php echo $set->ID; ?>)">
+                                    <span class="dashicons dashicons-upload"></span> Change
+                                </button>
+                                <?php if ($thumb_url): ?>
+                                <button class="kp-inv-img-btn remove" type="button" onclick="event.stopPropagation(); kpRemoveImage(<?php echo $set->ID; ?>, this)">
+                                    <span class="dashicons dashicons-trash"></span> Remove
+                                </button>
+                                <?php endif; ?>
+                            </div>
+                            <input type="file" id="kp-img-input-<?php echo $set->ID; ?>" accept="image/*" style="display:none;" onchange="kpUploadImage(<?php echo $set->ID; ?>, this)">
+                        </div>
                         <div class="kp-inv-card-top">
                             <label class="kp-inv-checkbox">
                                 <input type="checkbox" name="selected_items[]" value="<?php echo $set->ID; ?>">
@@ -629,7 +693,7 @@ function kavipushp_render_inventory() {
                             <p class="kp-inv-id">ID: <?php echo esc_html($set_code ?: 'KP' . $set->ID); ?></p>
                         </div>
                         <div class="kp-inv-card-footer">
-                            <span class="kp-inv-price"><?php echo number_format($rental_price); ?> <span class="kp-inv-per-day">/day</span></span>
+                            <span class="kp-inv-price"><?php if (floatval($rental_price) > 0): ?><?php echo number_format($rental_price); ?> <span class="kp-inv-per-day">/day</span><?php else: ?><span style="color:#e74c3c;font-size:11px;">No price</span><?php endif; ?></span>
                             <a href="<?php echo get_edit_post_link($set->ID); ?>" class="kp-inv-view-btn"><?php _e('VIEW DETAILS', 'kavipushp-bridals'); ?></a>
                         </div>
                     </div>
@@ -646,6 +710,117 @@ function kavipushp_render_inventory() {
                     </a>
                 </div>
                 <?php endif; ?>
+                </div><!-- /#kp-view-cards -->
+
+                <!-- ═══ TABLE VIEW — ALL PRODUCTS ══════════════════════════════ -->
+                <div id="kp-view-table" style="display:none;">
+
+                    <!-- Search + filter bar -->
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+                        <input type="text" id="kp-tbl-search" placeholder="Search by name, barcode, category..."
+                            style="flex:1;min-width:220px;padding:8px 12px;border:1px solid #d0b8e8;border-radius:6px;font-size:13px;">
+                        <select id="kp-tbl-cat" style="padding:8px 10px;border:1px solid #d0b8e8;border-radius:6px;font-size:13px;background:#fff;">
+                            <option value="">All Categories</option>
+                            <?php
+                            $all_cats = get_terms(array('taxonomy' => 'bridal_category', 'hide_empty' => false));
+                            if ($all_cats && !is_wp_error($all_cats)):
+                                foreach ($all_cats as $tc): ?>
+                            <option value="<?php echo esc_attr(strtolower($tc->name)); ?>"><?php echo esc_html($tc->name); ?></option>
+                            <?php endforeach; endif; ?>
+                        </select>
+                        <span id="kp-tbl-count" style="font-size:13px;color:#8e44ad;font-weight:600;"><?php echo $total_items; ?> items</span>
+                        <button class="button" onclick="kpTblExportCSV()" style="white-space:nowrap;">
+                            <i class="dashicons dashicons-download"></i> Export CSV
+                        </button>
+                        <button class="button" onclick="window.print()" style="white-space:nowrap;">
+                            <i class="dashicons dashicons-printer"></i> Print
+                        </button>
+                    </div>
+
+                    <!-- Table -->
+                    <div style="overflow-x:auto;border-radius:8px;border:1px solid #e0d0f5;">
+                    <table id="kp-tbl" style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr style="background:linear-gradient(135deg,#8e44ad,#6c3483);color:#fff;">
+                                <th style="padding:11px 10px;width:76px;text-align:center;">Image</th>
+                                <th style="padding:11px 8px;width:44px;">#</th>
+                                <th style="padding:11px 10px;cursor:pointer;white-space:nowrap;" onclick="kpTblSort('code')">Item No <span>&#8597;</span></th>
+                                <th style="padding:11px 10px;cursor:pointer;" onclick="kpTblSort('name')">Item Name <span>&#8597;</span></th>
+                                <th style="padding:11px 10px;cursor:pointer;" onclick="kpTblSort('cat')">Category <span>&#8597;</span></th>
+                                <th style="padding:11px 10px;cursor:pointer;text-align:right;white-space:nowrap;" onclick="kpTblSort('price')">Rental Price <span>&#8597;</span></th>
+                                <th style="padding:11px 10px;text-align:center;width:60px;">Edit</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kp-tbl-body">
+                        <?php
+                        $tbl_sno = 0;
+                        foreach ($sets as $tbl_set):
+                            $tbl_sno++;
+                            $tbl_code  = get_post_meta($tbl_set->ID, '_set_id', true) ?: ('KP' . $tbl_set->ID);
+                            $tbl_price = (float) get_post_meta($tbl_set->ID, '_rental_price', true);
+                            $tbl_cats  = get_the_terms($tbl_set->ID, 'bridal_category');
+                            $tbl_cat   = ($tbl_cats && !is_wp_error($tbl_cats)) ? $tbl_cats[0]->name : 'Uncategorized';
+                            $tbl_img   = get_option('kp_setimg_' . sanitize_key($tbl_code), '');
+                            if (!$tbl_img) {
+                                $tbl_tid = get_post_thumbnail_id($tbl_set->ID);
+                                if ($tbl_tid) $tbl_img = wp_get_attachment_image_url($tbl_tid, 'thumbnail') ?: wp_get_attachment_url($tbl_tid);
+                            }
+                            $tbl_bg = ($tbl_sno % 2 === 0) ? '#faf7ff' : '#fff';
+                        ?>
+                        <tr class="kp-tbl-row"
+                            data-name="<?php echo esc_attr(strtolower($tbl_set->post_title)); ?>"
+                            data-code="<?php echo esc_attr(strtolower($tbl_code)); ?>"
+                            data-cat="<?php echo esc_attr(strtolower($tbl_cat)); ?>"
+                            data-price="<?php echo esc_attr($tbl_price); ?>"
+                            style="background:<?php echo $tbl_bg; ?>;border-bottom:1px solid #ede8f5;"
+                            onmouseenter="this.style.background='#f3eeff'" onmouseleave="this.style.background='<?php echo $tbl_bg; ?>'">
+
+                            <!-- Image — click to upload -->
+                            <td style="padding:6px 10px;text-align:center;vertical-align:middle;">
+                                <div style="position:relative;display:inline-block;cursor:pointer;"
+                                    onclick="document.getElementById('kp-tbl-img-<?php echo $tbl_set->ID; ?>').click()" title="Click to change photo">
+                                    <?php if ($tbl_img): ?>
+                                    <img src="<?php echo esc_attr($tbl_img); ?>" alt=""
+                                        style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:2px solid #d0b8e8;display:block;">
+                                    <?php else: ?>
+                                    <div style="width:56px;height:56px;border-radius:6px;border:2px dashed #d0b8e8;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f8f3ff;color:#b8a0d0;font-size:10px;gap:2px;">
+                                        <span class="dashicons dashicons-camera" style="font-size:16px;width:16px;height:16px;"></span>
+                                        <span>Add</span>
+                                    </div>
+                                    <?php endif; ?>
+                                    <input type="file" id="kp-tbl-img-<?php echo $tbl_set->ID; ?>" accept="image/*" style="display:none;"
+                                        onchange="kpTblUpload(<?php echo $tbl_set->ID; ?>, this)">
+                                </div>
+                            </td>
+
+                            <td style="padding:6px 8px;color:#aaa;vertical-align:middle;text-align:center;"><?php echo $tbl_sno; ?></td>
+                            <td style="padding:6px 10px;font-weight:700;color:#8e44ad;vertical-align:middle;white-space:nowrap;"><?php echo esc_html($tbl_code); ?></td>
+                            <td style="padding:6px 10px;font-weight:500;vertical-align:middle;"><?php echo esc_html($tbl_set->post_title); ?></td>
+                            <td style="padding:6px 10px;vertical-align:middle;">
+                                <span style="background:#f3eeff;color:#6c3483;border-radius:12px;padding:2px 10px;font-size:12px;white-space:nowrap;"><?php echo esc_html($tbl_cat); ?></span>
+                            </td>
+                            <td style="padding:6px 10px;text-align:right;vertical-align:middle;white-space:nowrap;" class="kp-price-cell" data-post-id="<?php echo $tbl_set->ID; ?>" data-price="<?php echo esc_attr($tbl_price); ?>">
+                                <span class="kp-price-display" onclick="kpTblEditPrice(this)" title="Click to edit price" style="cursor:pointer;">
+                                    <?php if ($tbl_price > 0): ?>
+                                    <strong style="color:#27ae60;font-size:14px;">&#8377;<?php echo number_format($tbl_price); ?></strong>
+                                    <span style="font-size:11px;color:#aaa;">/day</span>
+                                    <?php else: ?>
+                                    <span style="color:#e74c3c;font-size:12px;border-bottom:1px dashed #e74c3c;">Set Price</span>
+                                    <?php endif; ?>
+                                </span>
+                            </td>
+                            <td style="padding:6px 10px;text-align:center;vertical-align:middle;">
+                                <a href="<?php echo get_edit_post_link($tbl_set->ID); ?>" style="color:#8e44ad;" title="Edit">
+                                    <span class="dashicons dashicons-edit" style="font-size:16px;width:16px;height:16px;"></span>
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    </div><!-- /overflow-x -->
+                </div><!-- /#kp-view-table -->
+
             </div>
         </div>
     </div>
@@ -668,6 +843,455 @@ function kavipushp_render_inventory() {
             });
         }
     });
+
+    var kpSetImageNonce = '<?php echo wp_create_nonce("kp_set_image"); ?>';
+
+    function kpTriggerUpload(postId) {
+        document.getElementById('kp-img-input-' + postId).click();
+    }
+
+    function kpUploadImage(postId, input) {
+        if (!input.files || !input.files[0]) return;
+        var zone = input.closest('.kp-inv-img-zone');
+        zone.classList.add('kp-inv-img-uploading');
+        var fd = new FormData();
+        fd.append('action', 'kavipushp_upload_set_image');
+        fd.append('_wpnonce', kpSetImageNonce);
+        fd.append('post_id', postId);
+        fd.append('image', input.files[0]);
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', ajaxurl);
+        xhr.onload = function() {
+            zone.classList.remove('kp-inv-img-uploading');
+            input.value = '';
+            var res = JSON.parse(xhr.responseText);
+            if (res.success) {
+                var existing = zone.querySelector('img');
+                var placeholder = zone.querySelector('.kp-inv-img-placeholder');
+                if (placeholder) placeholder.remove();
+                if (existing) {
+                    existing.src = res.data.url;
+                } else {
+                    var img = document.createElement('img');
+                    img.src = res.data.url;
+                    img.alt = '';
+                    zone.insertBefore(img, zone.querySelector('.kp-inv-img-overlay'));
+                }
+                var overlay = zone.querySelector('.kp-inv-img-overlay');
+                if (!overlay.querySelector('.remove')) {
+                    var btn = document.createElement('button');
+                    btn.className = 'kp-inv-img-btn remove';
+                    btn.type = 'button';
+                    btn.innerHTML = '<span class="dashicons dashicons-trash"></span> Remove';
+                    (function(pid, b) {
+                        b.onclick = function(e) { e.stopPropagation(); kpRemoveImage(pid, b); };
+                    })(postId, btn);
+                    overlay.appendChild(btn);
+                }
+            } else {
+                alert('Upload failed: ' + (res.data || 'Unknown error'));
+            }
+        };
+        xhr.onerror = function() {
+            zone.classList.remove('kp-inv-img-uploading');
+            alert('Upload failed. Please try again.');
+        };
+        xhr.send(fd);
+    }
+
+    function kpRemoveImage(postId, btn) {
+        if (!confirm('Remove image from this set?')) return;
+        var zone = btn.closest('.kp-inv-img-zone');
+        var fd = new FormData();
+        fd.append('action', 'kavipushp_remove_set_image');
+        fd.append('_wpnonce', kpSetImageNonce);
+        fd.append('post_id', postId);
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', ajaxurl);
+        xhr.onload = function() {
+            var res = JSON.parse(xhr.responseText);
+            if (res.success) {
+                var img = zone.querySelector('img');
+                if (img) img.remove();
+                btn.remove();
+                if (!zone.querySelector('.kp-inv-img-placeholder')) {
+                    var ph = document.createElement('div');
+                    ph.className = 'kp-inv-img-placeholder';
+                    ph.innerHTML = '<span class="dashicons dashicons-camera"></span><span>Add Photo</span>';
+                    zone.insertBefore(ph, zone.querySelector('.kp-inv-img-overlay'));
+                }
+            }
+        };
+        xhr.send(fd);
+    }
+
+    // ─── VIEW TABS (Card / Table) ──────────────────────────────────────────────
+    function kpSwitchView(view) {
+        var isCards = (view === 'cards');
+        document.getElementById('kp-view-cards').style.display = isCards ? '' : 'none';
+        document.getElementById('kp-view-table').style.display = isCards ? 'none' : '';
+        document.getElementById('kp-tab-cards').style.background = isCards ? '#8e44ad' : '#fff';
+        document.getElementById('kp-tab-cards').style.color     = isCards ? '#fff' : '#8e44ad';
+        document.getElementById('kp-tab-table').style.background = isCards ? '#fff' : '#8e44ad';
+        document.getElementById('kp-tab-table').style.color     = isCards ? '#8e44ad' : '#fff';
+        try { localStorage.setItem('kp_inv_view', view); } catch(e) {}
+    }
+    // Restore last used view on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        try {
+            var saved = localStorage.getItem('kp_inv_view');
+            if (saved === 'table') kpSwitchView('table');
+        } catch(e) {}
+    });
+
+    // ─── TABLE VIEW: search / sort / upload / export ───────────────────────────
+    var kpTblSortState = { col: null, asc: true };
+
+    function kpTblFilter() {
+        var q   = (document.getElementById('kp-tbl-search').value || '').toLowerCase().trim();
+        var cat = (document.getElementById('kp-tbl-cat').value || '').toLowerCase().trim();
+        var rows = document.querySelectorAll('#kp-tbl-body .kp-tbl-row');
+        var vis = 0;
+        rows.forEach(function(r) {
+            var show = (!q || r.dataset.name.includes(q) || r.dataset.code.includes(q) || r.dataset.cat.includes(q))
+                    && (!cat || r.dataset.cat.includes(cat));
+            r.style.display = show ? '' : 'none';
+            if (show) vis++;
+        });
+        document.getElementById('kp-tbl-count').textContent = vis + ' items';
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        var s = document.getElementById('kp-tbl-search');
+        var c = document.getElementById('kp-tbl-cat');
+        if (s) s.addEventListener('input', kpTblFilter);
+        if (c) c.addEventListener('change', kpTblFilter);
+    });
+
+    function kpTblSort(col) {
+        var asc = (kpTblSortState.col === col) ? !kpTblSortState.asc : true;
+        kpTblSortState = { col: col, asc: asc };
+        var tbody = document.getElementById('kp-tbl-body');
+        if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('.kp-tbl-row'));
+        rows.sort(function(a, b) {
+            var va = a.dataset[col] || '', vb = b.dataset[col] || '';
+            if (col === 'price') { return asc ? parseFloat(va)||0 - (parseFloat(vb)||0) : (parseFloat(vb)||0) - (parseFloat(va)||0); }
+            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
+        var v = 0;
+        tbody.querySelectorAll('.kp-tbl-row').forEach(function(r) {
+            if (r.style.display !== 'none') { v++; r.style.background = v%2===0?'#faf7ff':'#fff'; }
+        });
+    }
+
+    function kpTblUpload(postId, input) {
+        if (!input.files || !input.files[0]) return;
+        var wrap = input.closest('div[style*="relative"]');
+        if (wrap) wrap.style.opacity = '0.5';
+        var fd = new FormData();
+        fd.append('action', 'kavipushp_upload_set_image');
+        fd.append('_wpnonce', kpSetImageNonce);
+        fd.append('post_id', postId);
+        fd.append('image', input.files[0]);
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', ajaxurl);
+        xhr.onload = function() {
+            if (wrap) wrap.style.opacity = '1';
+            input.value = '';
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.success && wrap) {
+                    var old = wrap.querySelector('img');
+                    var ph  = wrap.querySelector('div[style*="dashed"]');
+                    if (ph) ph.remove();
+                    if (old) { old.src = res.data.url; }
+                    else {
+                        var img = document.createElement('img');
+                        img.src = res.data.url;
+                        img.style.cssText = 'width:56px;height:56px;object-fit:cover;border-radius:6px;border:2px solid #d0b8e8;display:block;';
+                        wrap.insertBefore(img, input);
+                    }
+                    // Sync same image to card view if card exists
+                    var card = document.querySelector('#inventory-grid .kp-inv-card[data-post-id="'+postId+'"]');
+                    if (card) {
+                        var zone = card.querySelector('.kp-inv-img-zone');
+                        if (zone) {
+                            var cImg = zone.querySelector('img');
+                            var cPh  = zone.querySelector('.kp-inv-img-placeholder');
+                            if (cPh) cPh.remove();
+                            if (cImg) { cImg.src = res.data.url; }
+                            else {
+                                var ni = document.createElement('img'); ni.src = res.data.url;
+                                zone.insertBefore(ni, zone.querySelector('.kp-inv-img-overlay'));
+                            }
+                        }
+                    }
+                }
+            } catch(e) {}
+        };
+        xhr.onerror = function() { if (wrap) wrap.style.opacity = '1'; };
+        xhr.send(fd);
+    }
+
+    function kpTblEditPrice(displaySpan) {
+        var cell   = displaySpan.closest('.kp-price-cell');
+        var postId = cell.dataset.postId;
+        var cur    = parseFloat(cell.dataset.price) || 0;
+
+        // Replace span with input
+        displaySpan.style.display = 'none';
+        var inp = document.createElement('input');
+        inp.type  = 'number';
+        inp.value = cur > 0 ? cur : '';
+        inp.min   = '0';
+        inp.placeholder = 'Enter price';
+        inp.style.cssText = 'width:90px;padding:4px 6px;border:2px solid #8e44ad;border-radius:5px;font-size:13px;text-align:right;outline:none;';
+        cell.appendChild(inp);
+        inp.focus();
+        inp.select();
+
+        function save() {
+            var val = parseFloat(inp.value) || 0;
+            inp.remove();
+            displaySpan.style.display = '';
+
+            // Optimistic UI update
+            cell.dataset.price = val;
+            var row = cell.closest('.kp-tbl-row');
+            if (row) row.dataset.price = val;
+            if (val > 0) {
+                displaySpan.innerHTML = '<strong style="color:#27ae60;font-size:14px;">&#8377;' + val.toLocaleString('en-IN') + '</strong><span style="font-size:11px;color:#aaa;">/day</span>';
+            } else {
+                displaySpan.innerHTML = '<span style="color:#e74c3c;font-size:12px;border-bottom:1px dashed #e74c3c;">Set Price</span>';
+            }
+
+            // AJAX save
+            var fd = new FormData();
+            fd.append('action', 'kavipushp_save_set_price');
+            fd.append('_wpnonce', kpSetImageNonce);
+            fd.append('post_id', postId);
+            fd.append('price', val);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', ajaxurl);
+            xhr.onload = function() {
+                try {
+                    var res = JSON.parse(xhr.responseText);
+                    if (res.success) {
+                        // Sync card view price too
+                        var card = document.querySelector('#inventory-grid .kp-inv-card[data-post-id="'+postId+'"]');
+                        if (card) {
+                            var priceEl = card.querySelector('.kp-inv-price');
+                            if (priceEl) priceEl.innerHTML = (val > 0 ? val.toLocaleString('en-IN') : '0') + ' <span class="kp-inv-per-day">/day</span>';
+                        }
+                    }
+                } catch(e) {}
+            };
+            xhr.send(fd);
+        }
+
+        inp.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') { inp.remove(); displaySpan.style.display = ''; }
+        });
+        inp.addEventListener('blur', save);
+    }
+
+    function kpTblExportCSV() {
+        var rows = document.querySelectorAll('#kp-tbl-body .kp-tbl-row');
+        var csv = 'S.No,Item No,Item Name,Category,Rental Price\n';
+        var n = 0;
+        rows.forEach(function(r) {
+            if (r.style.display === 'none') return;
+            n++;
+            var tds = r.querySelectorAll('td');
+            var name  = (tds[3] ? tds[3].textContent.trim() : '').replace(/,/g,'');
+            csv += n + ',"' + (r.dataset.code||'') + '","' + name + '","' + (r.dataset.cat||'') + '",' + (r.dataset.price||0) + '\n';
+        });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+        a.download = 'kavipushp-products.csv';
+        a.click();
+    }
+
+    // ─── BULK IMAGE UPLOAD ─────────────────────────────────────────────────────
+    function kpBulkImagesSelected(input) {
+        if (!input.files || !input.files.length) return;
+        var files = Array.from(input.files);
+        input.value = ''; // reset so same folder can be re-selected
+
+        // Build barcode → card map (exact lowercase key)
+        var codeMap = {};
+        document.querySelectorAll('#inventory-grid .kp-inv-card[data-set-code]').forEach(function(card) {
+            var code = card.dataset.setCode.trim().toLowerCase();
+            if (code) codeMap[code] = { postId: card.dataset.postId, card: card };
+        });
+
+        var matched = [], unmatched = [];
+        files.forEach(function(file) {
+            var name = file.name.replace(/\.[^.]+$/, '').trim().toLowerCase();
+            var hit = null;
+            // 1. Exact match
+            if (codeMap[name]) {
+                hit = codeMap[name];
+            } else {
+                // 2. Barcode is substring of filename (e.g. "BS001_photo" → "bs001")
+                for (var code in codeMap) {
+                    if (name.includes(code) || code.includes(name)) {
+                        hit = codeMap[code];
+                        break;
+                    }
+                }
+            }
+            if (hit) {
+                matched.push({ file: file, postId: hit.postId, card: hit.card, displayName: file.name });
+            } else {
+                unmatched.push(file.name);
+            }
+        });
+
+        kpShowBulkPanel(matched, unmatched);
+    }
+
+    function kpShowBulkPanel(matched, unmatched) {
+        var panel = document.getElementById('kp-bulk-upload-panel');
+        if (!panel) return;
+        var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+            + '<h3 style="margin:0;color:#8e44ad;font-size:16px;">&#128248; Bulk Image Upload Preview</h3>'
+            + '<button onclick="kpCloseBulkPanel()" style="background:none;border:none;cursor:pointer;font-size:18px;color:#999;">&#x2715;</button>'
+            + '</div>';
+
+        html += '<div style="display:flex;gap:10px;margin-bottom:14px;">'
+            + '<span style="background:#27ae60;color:#fff;border-radius:20px;padding:4px 14px;font-size:13px;font-weight:600;">&#10003; ' + matched.length + ' matched</span>'
+            + '<span style="background:#e74c3c;color:#fff;border-radius:20px;padding:4px 14px;font-size:13px;font-weight:600;">&#10007; ' + unmatched.length + ' unmatched</span>'
+            + '</div>';
+
+        if (matched.length > 0) {
+            html += '<div style="max-height:180px;overflow-y:auto;margin-bottom:14px;background:#fff;border:1px solid #e0d0f5;border-radius:6px;padding:10px;">';
+            matched.forEach(function(m) {
+                html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f3eeff;">'
+                    + '<span style="color:#27ae60;font-size:16px;">&#10003;</span>'
+                    + '<span style="font-size:13px;color:#555;">' + m.displayName + '</span>'
+                    + '<span style="margin-left:auto;font-size:12px;color:#8e44ad;background:#f3eeff;border-radius:4px;padding:2px 8px;">ID: ' + (m.card ? m.card.dataset.setCode : '') + '</span>'
+                    + '</div>';
+            });
+            html += '</div>';
+        }
+
+        if (unmatched.length > 0) {
+            html += '<div style="max-height:100px;overflow-y:auto;margin-bottom:14px;background:#fff8f7;border:1px solid #fad7d3;border-radius:6px;padding:10px;">';
+            html += '<p style="margin:0 0 6px;font-size:12px;color:#e74c3c;font-weight:600;">No matching barcode found:</p>';
+            unmatched.forEach(function(name) {
+                html += '<div style="font-size:12px;color:#999;padding:2px 0;">&#10007; ' + name + '</div>';
+            });
+            html += '</div>';
+        }
+
+        // Progress bar (hidden initially)
+        html += '<div id="kp-bulk-progress-wrap" style="display:none;margin-bottom:12px;">'
+            + '<div style="display:flex;justify-content:space-between;font-size:12px;color:#555;margin-bottom:4px;">'
+            + '<span id="kp-bulk-progress-label">Uploading...</span>'
+            + '<span id="kp-bulk-progress-count">0 / ' + matched.length + '</span>'
+            + '</div>'
+            + '<div style="background:#e8d5f5;border-radius:6px;height:10px;overflow:hidden;">'
+            + '<div id="kp-bulk-progress-bar" style="width:0%;height:100%;background:#8e44ad;transition:width 0.3s;"></div>'
+            + '</div>'
+            + '</div>';
+
+        html += '<div id="kp-bulk-done-msg" style="display:none;padding:10px;background:#e8f8f0;border:1px solid #27ae60;border-radius:6px;color:#27ae60;font-weight:600;margin-bottom:12px;">&#10003; All images uploaded successfully!</div>';
+
+        if (matched.length > 0) {
+            html += '<button id="kp-bulk-start-btn" onclick="kpStartBulkUpload()" style="background:#8e44ad;color:#fff;border:none;border-radius:6px;padding:9px 22px;cursor:pointer;font-size:14px;font-weight:600;">&#9650; Upload ' + matched.length + ' Images Now</button>';
+        }
+
+        panel.innerHTML = html;
+        panel.style.display = 'block';
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        // Store matched list on the panel for upload
+        panel._matchedQueue = matched;
+    }
+
+    function kpCloseBulkPanel() {
+        var panel = document.getElementById('kp-bulk-upload-panel');
+        if (panel) { panel.style.display = 'none'; panel._matchedQueue = null; }
+    }
+
+    function kpStartBulkUpload() {
+        var panel = document.getElementById('kp-bulk-upload-panel');
+        if (!panel || !panel._matchedQueue || !panel._matchedQueue.length) return;
+        var queue = panel._matchedQueue.slice();
+        var total = queue.length;
+        var done = 0;
+
+        document.getElementById('kp-bulk-start-btn').disabled = true;
+        document.getElementById('kp-bulk-start-btn').textContent = 'Uploading...';
+        document.getElementById('kp-bulk-progress-wrap').style.display = 'block';
+
+        function uploadNext() {
+            if (!queue.length) {
+                document.getElementById('kp-bulk-progress-bar').style.width = '100%';
+                document.getElementById('kp-bulk-progress-label').textContent = 'Done!';
+                document.getElementById('kp-bulk-progress-count').textContent = total + ' / ' + total;
+                document.getElementById('kp-bulk-done-msg').style.display = 'block';
+                document.getElementById('kp-bulk-start-btn').style.display = 'none';
+                return;
+            }
+            var item = queue.shift();
+            var fd = new FormData();
+            fd.append('action', 'kavipushp_upload_set_image');
+            fd.append('_wpnonce', kpSetImageNonce);
+            fd.append('post_id', item.postId);
+            fd.append('image', item.file);
+
+            document.getElementById('kp-bulk-progress-label').textContent = 'Uploading: ' + item.displayName;
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', ajaxurl);
+            xhr.onload = function() {
+                done++;
+                var pct = Math.round((done / total) * 100);
+                document.getElementById('kp-bulk-progress-bar').style.width = pct + '%';
+                document.getElementById('kp-bulk-progress-count').textContent = done + ' / ' + total;
+                try {
+                    var res = JSON.parse(xhr.responseText);
+                    if (res.success && item.card) {
+                        // Update the card image live
+                        var zone = item.card.querySelector('.kp-inv-img-zone');
+                        if (zone) {
+                            var existing = zone.querySelector('img');
+                            var placeholder = zone.querySelector('.kp-inv-img-placeholder');
+                            if (placeholder) placeholder.remove();
+                            if (existing) {
+                                existing.src = res.data.url;
+                            } else {
+                                var img = document.createElement('img');
+                                img.src = res.data.url;
+                                img.alt = '';
+                                zone.insertBefore(img, zone.querySelector('.kp-inv-img-overlay'));
+                            }
+                            var overlay = zone.querySelector('.kp-inv-img-overlay');
+                            if (overlay && !overlay.querySelector('.remove')) {
+                                var rmBtn = document.createElement('button');
+                                rmBtn.className = 'kp-inv-img-btn remove';
+                                rmBtn.type = 'button';
+                                rmBtn.innerHTML = '<span class="dashicons dashicons-trash"></span> Remove';
+                                (function(pid, b) {
+                                    b.onclick = function(e) { e.stopPropagation(); kpRemoveImage(pid, b); };
+                                })(item.postId, rmBtn);
+                                overlay.appendChild(rmBtn);
+                            }
+                        }
+                    }
+                } catch(e) {}
+                uploadNext();
+            };
+            xhr.onerror = function() { done++; uploadNext(); };
+            xhr.send(fd);
+        }
+
+        uploadNext();
+    }
     </script>
     <?php
 }
@@ -677,6 +1301,9 @@ function kavipushp_render_inventory() {
 function kavipushp_render_bookings_management() {
     if (isset($_GET['deleted'])) {
         echo '<div class="notice notice-success is-dismissible"><p>' . __('Booking deleted successfully!', 'kavipushp-bridals') . '</p></div>';
+    }
+    if (isset($_GET['booking_saved'])) {
+        echo '<div class="notice notice-success is-dismissible"><p><strong>' . __('Booking saved successfully!', 'kavipushp-bridals') . '</strong></p></div>';
     }
     ?>
     <div class="kavipushp-admin-wrap">
@@ -827,6 +1454,15 @@ function kavipushp_render_bookings_management() {
                         $set_id = get_post_meta($booking->ID, '_bridal_set_id', true);
                         $set = $set_id ? get_post($set_id) : null;
                         $set_code = $set_id ? get_post_meta($set_id, '_set_id', true) : '';
+                        // Use options store first (persists across deploys)
+                        $set_thumb_url = $set_code ? get_option('kp_setimg_' . sanitize_key($set_code), '') : '';
+                        if (!$set_thumb_url && $set_id) {
+                            $set_thumb_id = get_post_thumbnail_id($set_id);
+                            if ($set_thumb_id) {
+                                $set_thumb_url = wp_get_attachment_image_url($set_thumb_id, 'medium');
+                                if (!$set_thumb_url) $set_thumb_url = wp_get_attachment_image_url($set_thumb_id, 'full');
+                            }
+                        }
                         $booking_category = get_post_meta($booking->ID, '_bridal_set_category', true);
                         if (!$booking_category && $set_id) {
                             $bk_cat_terms = get_the_terms($set_id, 'bridal_category');
@@ -883,6 +1519,12 @@ function kavipushp_render_bookings_management() {
                         <div class="kp-booking-items">
                             <span class="kp-label"><?php _e('Selected Items:', 'kavipushp-bridals'); ?></span>
                             <?php if ($set): ?>
+                            <?php if ($set_thumb_url): ?>
+                            <div style="margin:8px 0;">
+                                <img src="<?php echo esc_attr($set_thumb_url); ?>" alt="<?php echo esc_attr($set->post_title); ?>"
+                                    style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:2px solid #e2c98a;box-shadow:0 2px 6px rgba(0,0,0,0.12);display:block;">
+                            </div>
+                            <?php endif; ?>
                             <div class="kp-item-row" style="flex-wrap:wrap;gap:6px;align-items:center;">
                                 <span class="kp-item-code" style="font-weight:600;"><?php echo esc_html($set->post_title); ?></span>
                                 <?php if ($set_code): ?>
@@ -1004,6 +1646,8 @@ function kavipushp_render_invoices_enhanced() {
     $action = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : 'list';
     $invoice_booking_id = isset($_GET['booking_id']) ? intval($_GET['booking_id']) : 0;
     ?>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <div class="kavipushp-admin-wrap">
         <div class="kp-admin-header">
             <div class="kp-user-info">
@@ -1060,6 +1704,26 @@ function kavipushp_render_invoices_enhanced() {
             }
             $inv_set_includes = implode(' | ', $inv_set_includes_parts);
 
+            // Get set image for this invoice — options store is primary (persists across deploys)
+            $inv_set_image_url = '';
+            if ($inv_booking_id) {
+                $inv_b_set_id = get_post_meta($inv_booking_id, '_bridal_set_id', true);
+                if ($inv_b_set_id) {
+                    $inv_set_code = get_post_meta($inv_b_set_id, '_set_id', true);
+                    if ($inv_set_code) {
+                        $inv_set_image_url = get_option('kp_setimg_' . sanitize_key($inv_set_code), '');
+                    }
+                    if (!$inv_set_image_url) {
+                        $inv_thumb_id = get_post_thumbnail_id($inv_b_set_id);
+                        if ($inv_thumb_id) {
+                            $inv_set_image_url = wp_get_attachment_image_url($inv_thumb_id, 'medium');
+                            if (!$inv_set_image_url) $inv_set_image_url = wp_get_attachment_image_url($inv_thumb_id, 'full');
+                            if (!$inv_set_image_url) $inv_set_image_url = wp_get_attachment_url($inv_thumb_id);
+                        }
+                    }
+                }
+            }
+
             $type_labels = array('booking' => __('Booking Invoice', 'kavipushp-bridals'), 'pickup' => __('Pickup Invoice', 'kavipushp-bridals'), 'final' => __('Final Invoice', 'kavipushp-bridals'));
             $type_label = isset($type_labels[$inv->invoice_type]) ? $type_labels[$inv->invoice_type] : ucfirst($inv->invoice_type);
             $biz_name    = get_option('kavipushp_business_name', 'Kavipushp Jewels Rental');
@@ -1081,7 +1745,13 @@ function kavipushp_render_invoices_enhanced() {
                     <h3 style="text-align:center; color:#1a1f36;"><?php echo esc_html($type_label); ?></h3>
                     <p style="text-align:center; color:#666;"><?php echo esc_html($inv->invoice_number); ?> &nbsp;&bull;&nbsp; <?php echo date('d/m/Y', strtotime($inv->created_at)); ?></p>
 
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:20px 0;">
+                    <?php if ($inv_set_image_url): ?>
+                    <div style="text-align:center; margin:15px 0;">
+                        <img src="<?php echo esc_attr($inv_set_image_url); ?>" style="max-width:200px; max-height:160px; border:1px solid #ddd; border-radius:6px;">
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="kp-invoice-grid-2col" style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:20px 0;">
                         <div>
                             <h4 style="color:#c9a86c; margin:0 0 8px;"><?php _e('Bill To', 'kavipushp-bridals'); ?></h4>
                             <p style="margin:3px 0; font-weight:bold;"><?php echo esc_html($inv->customer_name); ?></p>
@@ -1162,12 +1832,12 @@ function kavipushp_render_invoices_enhanced() {
                             </tr>
                             <?php if ($dp_f > 0): ?>
                             <tr>
-                                <td style="padding:10px; border-bottom:1px solid #eee; color:#e74c3c;" colspan="3"><?php _e('Less: Damage Charges', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; color:#e74c3c;" colspan="3"><?php _e('Less: Damage or Late Charges or Security Hold', 'kavipushp-bridals'); ?></td>
                                 <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; color:#e74c3c;">- ₹<?php echo number_format($dp_f, 2); ?></td>
                             </tr>
                             <?php endif; ?>
                             <tr>
-                                <td style="padding:10px; font-weight:bold; color:<?php echo $refund_color; ?>;" colspan="3"><?php _e('Security Refund after Damage Charges', 'kavipushp-bridals'); ?></td>
+                                <td style="padding:10px; font-weight:bold; color:<?php echo $refund_color; ?>;" colspan="3"><?php _e('Security Refund after Damage or Late Charges or Security Hold', 'kavipushp-bridals'); ?></td>
                                 <td style="padding:10px; text-align:right; font-weight:bold; color:<?php echo $refund_color; ?>;">₹<?php echo number_format($sec_refund, 2); ?></td>
                             </tr>
                             <?php endif; ?>
@@ -1187,15 +1857,30 @@ function kavipushp_render_invoices_enhanced() {
                     </div>
                     <?php endif; ?>
 
+                    <?php if (!empty($inv->security_hold_reason)): ?>
+                    <div style="background:#fff3e0; border:1px solid #ffe0b2; border-radius:6px; padding:12px 15px; margin:15px 0;">
+                        <strong style="color:#e67e22;"><?php _e('Reasons for Security Hold:', 'kavipushp-bridals'); ?></strong>
+                        <span style="color:#333; margin-left:5px;"><?php echo esc_html($inv->security_hold_reason); ?></span>
+                    </div>
+                    <?php endif; ?>
+
                     <div style="margin:20px 0; padding:15px; border:1px solid #ddd; border-radius:6px; background:#fafafa;">
                         <h5 style="margin:0 0 10px; color:#1a1f36;"><?php _e('Kavipushp Jewels – Terms & Conditions', 'kavipushp-bridals'); ?></h5>
                         <ol style="margin:0; padding-left:18px; font-size:12px; color:#555; line-height:1.8;">
                             <li><?php _e('Jewellery is rented only for the period mentioned; late return will be charged per day.', 'kavipushp-bridals'); ?></li>
                             <li><?php _e('A refundable security deposit may be collected and returned after condition check.', 'kavipushp-bridals'); ?></li>
-                            <li><?php _e('Any damage, loss, or missing parts will be charged as per repair or replacement value.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Any damage, loss, or missing parts will be charged as per repair or replacement value mentioned before dispatch in the whatsapp group.', 'kavipushp-bridals'); ?></li>
                             <li><?php _e('Full payment must be made before delivery; advance/booking amount is non-refundable.', 'kavipushp-bridals'); ?></li>
                             <li><?php _e('Customer must provide valid ID proof and is responsible for the safety of the jewellery during the rental period.', 'kavipushp-bridals'); ?></li>
                             <li><?php _e('All disputes are subject to local jurisdiction.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('There shall be no discount on the rental prices of the set.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Rental price does not include customization charges if applicable.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Booking amount is neither refundable nor adjustable or transferable in any condition, no exceptions.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('No excuses like jewellery will be provided by in-laws, in-laws insisting on wearing gold only, wedding postponed or cancelled are entertained.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Articles agreed on at the time of booking will only be provided; extra article will be chargeable.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Use official number 9977722271 for any query or requirements; no responsibility for any personal number of employee.', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('Rental clarification: First 3 days normal rent of Bridal Set, next 2 days Rs.500 extra (if informed at the time of booking).', 'kavipushp-bridals'); ?></li>
+                            <li><?php _e('If the bridal set is not returned within the informed timeline, per day rental charges will be applicable as extra charge.', 'kavipushp-bridals'); ?></li>
                         </ol>
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:30px; margin-top:30px;">
                             <div><div style="border-top:1px solid #333; width:100%; margin-bottom:6px;"></div><p style="margin:0; font-size:12px; color:#555;"><?php _e('Customer Signature & Date', 'kavipushp-bridals'); ?></p></div>
@@ -1204,15 +1889,37 @@ function kavipushp_render_invoices_enhanced() {
                     </div>
                 </div>
 
-                <div style="margin-top:20px; display:flex; gap:10px;">
+                <div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
                     <button class="button button-primary button-large" onclick="printSavedInvoiceClean()">
                         <i class="dashicons dashicons-printer"></i> <?php _e('Print Invoice', 'kavipushp-bridals'); ?>
+                    </button>
+                    <button class="button button-large" onclick="createSavedInvoicePDF(this)" style="background:#c9a86c;border-color:#b8965a;color:#fff;">
+                        <i class="dashicons dashicons-media-document"></i> <?php _e('Create PDF', 'kavipushp-bridals'); ?>
                     </button>
                     <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices'); ?>" class="button button-large">
                         <i class="dashicons dashicons-arrow-left-alt"></i> <?php _e('Back to Invoices', 'kavipushp-bridals'); ?>
                     </a>
                 </div>
                 <script>
+                async function createSavedInvoicePDF(btn) {
+                    var element = document.getElementById('printable-invoice');
+                    if (!element) return;
+                    var origHtml = btn.innerHTML;
+                    btn.innerHTML = '<i class="dashicons dashicons-update"></i> Generating...';
+                    btn.disabled = true;
+                    try {
+                        var canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+                        var { jsPDF } = window.jspdf;
+                        var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                        var pageW = pdf.internal.pageSize.getWidth();
+                        var pageH = pdf.internal.pageSize.getHeight();
+                        var imgH = (canvas.height * pageW) / canvas.width;
+                        var finalH = Math.min(imgH, pageH);
+                        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pageW, finalH);
+                        pdf.save('<?php echo esc_js($inv->invoice_number . '-' . preg_replace('/[^a-z0-9]/i', '-', $inv->customer_name)); ?>.pdf');
+                    } catch(e) { console.error('PDF error:', e); alert('PDF generation failed: ' + e.message); }
+                    btn.innerHTML = origHtml; btn.disabled = false;
+                }
                 function printSavedInvoiceClean() {
                     var bizName    = <?php echo wp_json_encode($biz_name); ?>;
                     var bizAddress = <?php echo wp_json_encode($biz_address); ?>;
@@ -1240,9 +1947,11 @@ function kavipushp_render_invoices_enhanced() {
                     var amountReceived = <?php echo floatval($inv->amount_received ?? 0); ?>;
                     var damagesPaid   = <?php echo floatval($inv->damages_paid ?? 0); ?>;
                     var grandTotal    = <?php echo floatval($inv->grand_total); ?>;
+                    var secHoldReason = <?php echo wp_json_encode(isset($inv->security_hold_reason) ? $inv->security_hold_reason : ''); ?>;
                     var customization = <?php echo wp_json_encode($inv->customization_notes ?: ''); ?>;
                     var stylist    = <?php echo wp_json_encode($inv->stylist_name ?: ''); ?>;
                     var setIncludes = <?php echo wp_json_encode($inv_set_includes); ?>;
+                    var invSetImageUrl = <?php echo wp_json_encode($inv_set_image_url); ?>;
 
                     var footerNotes = {
                         booking: 'This is a booking confirmation invoice. Remaining amount to be paid at the time of pickup.',
@@ -1273,10 +1982,10 @@ function kavipushp_render_invoices_enhanced() {
                         }
                         tableRows += '<tr><td colspan="3" style="font-weight:bold;color:#27ae60;">Total Received on Pickup</td><td style="text-align:right;font-weight:bold;color:#27ae60;">\u20B9' + totalRecvd.toLocaleString('en-IN') + '</td></tr>';
                         if (damagesPaid > 0) {
-                            tableRows += '<tr><td colspan="3" style="color:#e74c3c;">Less: Damage Charges</td><td style="text-align:right;color:#e74c3c;">- \u20B9' + damagesPaid.toLocaleString('en-IN') + '</td></tr>';
+                            tableRows += '<tr><td colspan="3" style="color:#e74c3c;">Less: Damage or Late Charges or Security Hold</td><td style="text-align:right;color:#e74c3c;">- \u20B9' + damagesPaid.toLocaleString('en-IN') + '</td></tr>';
                         }
                         var refundColor = secRefund >= 0 ? '#27ae60' : '#e74c3c';
-                        tableRows += '<tr><td colspan="3" style="font-weight:bold;font-size:13px;color:' + refundColor + ';">Security Refund after Damage Charges</td><td style="text-align:right;font-weight:bold;font-size:13px;color:' + refundColor + ';">\u20B9' + secRefund.toLocaleString('en-IN') + '</td></tr>';
+                        tableRows += '<tr><td colspan="3" style="font-weight:bold;font-size:13px;color:' + refundColor + ';">Security Refund after Damage or Late Charges or Security Hold</td><td style="text-align:right;font-weight:bold;font-size:13px;color:' + refundColor + ';">\u20B9' + secRefund.toLocaleString('en-IN') + '</td></tr>';
                     }
 
                     var rentalPeriod = '';
@@ -1316,20 +2025,40 @@ function kavipushp_render_invoices_enhanced() {
                         '<p><strong>' + name + '</strong></p><p>' + phone + '</p>' + (email ? '<p>' + email + '</p>' : '') + '<p>' + address + '</p></div>' +
                         '<div class="info-block"><h3>Rental Period</h3>' + rentalPeriod + '</div>' +
                         '</div>' +
+                        (invSetImageUrl ? '<div style="text-align:center;margin:15px 0;"><img src="' + invSetImageUrl + '" style="max-width:200px;max-height:160px;border:1px solid #ddd;border-radius:6px;"></div>' : '') +
                         (setIncludes ? '<div style="background:#f9f0ff;border:1px solid #e0c8f0;border-radius:6px;padding:12px 15px;margin:10px 0 15px 0;"><strong style="color:#7b4fa6;">Set Includes:</strong> <span style="color:#333;margin-left:6px;">' + setIncludes + '</span></div>' : '') +
                         '<table><thead><tr><th>Item</th><th>Category</th><th>Set Code</th><th style="text-align:right;">Amount</th></tr></thead>' +
                         '<tbody>' + tableRows + '</tbody></table>' +
                         (customization ? '<div style="background:#fff8e1;border:1px solid #f0e68c;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#c9a86c;">Customization:</strong> ' + customization + '</div>' : '') +
                         (stylist ? '<div style="background:#f0f7ff;border:1px solid #c8dff8;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#2980b9;">Stylist Who Attended:</strong> ' + stylist + '</div>' : '') +
+                        (secHoldReason ? '<div style="background:#fff3e0;border:1px solid #ffe0b2;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#e67e22;">Reasons for Security Hold:</strong> <span style="color:#333;margin-left:6px;">' + secHoldReason + '</span></div>' : '') +
+                        (invType === 'booking' ?
+                        '<div style="margin:8px 0;padding:10px 12px;border:2px solid #e74c3c;border-radius:6px;background:#fff8f8;">' +
+                        '<h5 style="margin:0 0 8px;color:#e74c3c;font-size:12px;font-weight:bold;border-bottom:1px solid #f5c6c6;padding-bottom:5px;">Important to Note Customers</h5>' +
+                        '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+                        '<tr><td style="padding:4px 0;color:#333;font-weight:500;">Remaining Bridal Rent</td><td style="text-align:right;font-weight:bold;color:#333;">\u20b9' + grandTotal.toLocaleString('en-IN') + '</td></tr>' +
+                        '<tr><td style="padding:4px 0;color:#333;font-weight:500;">Security to be Paid on Pickup</td><td style="text-align:right;font-weight:bold;color:#333;">\u20b9' + secDep.toLocaleString('en-IN') + '</td></tr>' +
+                        '<tr><td colspan="2"><hr style="border:none;border-top:1.5px solid #e74c3c;margin:4px 0;"></td></tr>' +
+                        '<tr><td style="padding:4px 0;color:#e74c3c;font-weight:bold;font-size:12px;">Total to be Paid by Customer on Pickup</td><td style="text-align:right;font-weight:bold;font-size:12px;color:#e74c3c;">\u20b9' + (grandTotal + secDep).toLocaleString('en-IN') + '</td></tr>' +
+                        '</table></div>'
+                        : '') +
                         '<div style="margin:8px 0;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fafafa;">' +
                         '<h5 style="margin:0 0 5px;color:#1a1f36;font-size:11px;">Kavipushp Jewels \u2013 Terms &amp; Conditions</h5>' +
                         '<ol>' +
                         '<li>Jewellery is rented only for the period mentioned; late return will be charged per day.</li>' +
                         '<li>A refundable security deposit may be collected and returned after condition check.</li>' +
-                        '<li>Any damage, loss, or missing parts will be charged as per repair or replacement value.</li>' +
+                        '<li>Any damage, loss, or missing parts will be charged as per repair or replacement value mentioned before dispatch in the whatsapp group.</li>' +
                         '<li>Full payment must be made before delivery; advance/booking amount is non-refundable.</li>' +
                         '<li>Customer must provide valid ID proof and is responsible for the safety of the jewellery during the rental period.</li>' +
                         '<li>All disputes are subject to local jurisdiction.</li>' +
+                        '<li>There shall be no discount on the rental prices of the set.</li>' +
+                        '<li>Rental price does not include customization charges if applicable.</li>' +
+                        '<li>Booking amount is neither refundable nor adjustable or transferable in any condition, no exceptions.</li>' +
+                        '<li>No excuses like jewellery will be provided by in-laws, in-laws insisting on wearing gold only, wedding postponed or cancelled are entertained.</li>' +
+                        '<li>Articles agreed on at the time of booking will only be provided; extra article will be chargeable.</li>' +
+                        '<li>Use official number 9977722271 for any query or requirements; no responsibility for any personal number of employee.</li>' +
+                        '<li>Rental clarification: First 3 days normal rent of Bridal Set, next 2 days Rs.500 extra (if informed at the time of booking).</li>' +
+                        '<li>If the bridal set is not returned within the informed timeline, per day rental charges will be applicable as extra charge.</li>' +
                         '</ol>' +
                         '<p style="margin:6px 0 0;font-size:11px;font-weight:bold;color:#333;">Accepted and Agreed By:</p>' +
                         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:15px;">' +
@@ -1388,6 +2117,21 @@ function kavipushp_render_invoices_enhanced() {
                                 $b_set_id = get_post_meta($b->ID, '_bridal_set_id', true);
                                 $b_set = $b_set_id ? get_post($b_set_id) : null;
                                 $b_set_name = $b_set ? $b_set->post_title : '';
+                                $b_set_image = '';
+                                if ($b_set_id) {
+                                    $b_set_code_img = get_post_meta($b_set_id, '_set_id', true);
+                                    if ($b_set_code_img) {
+                                        $b_set_image = get_option('kp_setimg_' . sanitize_key($b_set_code_img), '');
+                                    }
+                                    if (!$b_set_image) {
+                                        $b_thumb_id = get_post_thumbnail_id($b_set_id);
+                                        if ($b_thumb_id) {
+                                            $b_set_image = wp_get_attachment_image_url($b_thumb_id, 'medium');
+                                            if (!$b_set_image) $b_set_image = wp_get_attachment_image_url($b_thumb_id, 'full');
+                                            if (!$b_set_image) $b_set_image = wp_get_attachment_url($b_thumb_id);
+                                        }
+                                    }
+                                }
                                 $b_customized_set = get_post_meta($b->ID, '_customized_bridal_set', true);
                                 $b_set_category = get_post_meta($b->ID, '_bridal_set_category', true);
                                 if (!$b_set_category && $b_set_id) {
@@ -1424,6 +2168,7 @@ function kavipushp_render_invoices_enhanced() {
                                 data-status="<?php echo esc_attr($b_status); ?>"
                                 data-date="<?php echo esc_attr($b_date); ?>"
                                 data-pickup-security="<?php echo esc_attr(isset($pickup_invoices[$b->ID]) ? $pickup_invoices[$b->ID] : 0); ?>"
+                                data-set-image="<?php echo esc_attr($b_set_image); ?>"
                                 <?php selected($invoice_booking_id, $b->ID); ?>>
                                 <?php echo esc_html($b_name . ' - ' . $b_display_name . ' (' . $b_date . ') [' . strtoupper($b_status) . ']'); ?>
                             </option>
@@ -1460,8 +2205,13 @@ function kavipushp_render_invoices_enhanced() {
                     </div>
 
                     <div id="damages-paid-group" class="kp-form-group" style="display: none;">
-                        <label><strong><?php _e('Damages Charges (₹)', 'kavipushp-bridals'); ?></strong></label>
+                        <label><strong><?php _e('Damage or Late Charges or Security Hold (₹)', 'kavipushp-bridals'); ?></strong></label>
                         <input type="number" id="damages_paid" value="0" min="0" onchange="updateInvoicePreview()" style="padding: 6px 10px; width: 200px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+
+                    <div id="security-hold-reason-group" class="kp-form-group" style="display: none;">
+                        <label><strong><?php _e('Reasons for Security Hold', 'kavipushp-bridals'); ?></strong></label>
+                        <textarea id="security_hold_reason" rows="3" placeholder="<?php esc_attr_e('Enter reasons for security hold, damage or late charges (if any)...', 'kavipushp-bridals'); ?>" style="padding: 6px 10px; width: 400px; border: 1px solid #ddd; border-radius: 4px; display: block;"></textarea>
                     </div>
 
                     <div id="set-image-group" class="kp-form-group">
@@ -1569,10 +2319,18 @@ function kavipushp_render_invoices_enhanced() {
                             <ol style="margin: 0; padding-left: 18px; font-size: 12px; color: #555; line-height: 1.8;">
                                 <li><?php _e('Jewellery is rented only for the period mentioned; late return will be charged per day.', 'kavipushp-bridals'); ?></li>
                                 <li><?php _e('A refundable security deposit may be collected and returned after condition check.', 'kavipushp-bridals'); ?></li>
-                                <li><?php _e('Any damage, loss, or missing parts will be charged as per repair or replacement value.', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('Any damage, loss, or missing parts will be charged as per repair or replacement value mentioned before dispatch in the whatsapp group.', 'kavipushp-bridals'); ?></li>
                                 <li><?php _e('Full payment must be made before delivery; advance/booking amount is non-refundable.', 'kavipushp-bridals'); ?></li>
                                 <li><?php _e('Customer must provide valid ID proof and is responsible for the safety of the jewellery during the rental period.', 'kavipushp-bridals'); ?></li>
                                 <li><?php _e('All disputes are subject to local jurisdiction.', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('There shall be no discount on the rental prices of the set.', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('Rental price does not include customization charges if applicable.', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('Booking amount is neither refundable nor adjustable or transferable in any condition, no exceptions.', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('No excuses like jewellery will be provided by in-laws, in-laws insisting on wearing gold only, wedding postponed or cancelled are entertained.', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('Articles agreed on at the time of booking will only be provided; extra article will be chargeable.', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('Use official number 9977722271 for any query or requirements; no responsibility for any personal number of employee.', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('Rental clarification: First 3 days normal rent of Bridal Set, next 2 days Rs.500 extra (if informed at the time of booking).', 'kavipushp-bridals'); ?></li>
+                                <li><?php _e('If the bridal set is not returned within the informed timeline, per day rental charges will be applicable as extra charge.', 'kavipushp-bridals'); ?></li>
                             </ol>
                             <p style="margin: 10px 0 0; font-size: 12px; font-weight: bold; color: #333;"><?php _e('Accepted and Agreed By:', 'kavipushp-bridals'); ?></p>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px;">
@@ -1590,12 +2348,15 @@ function kavipushp_render_invoices_enhanced() {
                         <p id="inv-status" style="text-align: center; margin: 15px 0;"></p>
                     </div>
 
-                    <div style="margin-top: 20px; display: flex; gap: 10px;">
+                    <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap:wrap;">
                         <button class="button button-primary button-large" onclick="saveGeneratedInvoice()">
                             <i class="dashicons dashicons-download"></i> <?php _e('Save Invoice', 'kavipushp-bridals'); ?>
                         </button>
                         <button class="button button-large" onclick="printGeneratedInvoice()">
                             <i class="dashicons dashicons-printer"></i> <?php _e('Print Invoice', 'kavipushp-bridals'); ?>
+                        </button>
+                        <button class="button button-large" onclick="createGeneratedInvoicePDF(this)" style="background:#c9a86c;border-color:#b8965a;color:#fff;">
+                            <i class="dashicons dashicons-media-document"></i> <?php _e('Create PDF', 'kavipushp-bridals'); ?>
                         </button>
                     </div>
                     <div id="invoice-save-msg" style="display:none; margin-top: 10px;"></div>
@@ -1727,10 +2488,10 @@ function kavipushp_render_invoices_enhanced() {
                 config.afterTotalRows = [];
                 config.afterTotalRows.push({ label: 'Total Received on Pickup', amount: totalReceived, color: '#27ae60', isBold: true });
                 if (damagesPaid > 0) {
-                    config.afterTotalRows.push({ label: 'Less: Damage Charges', amount: damagesPaid, color: '#e74c3c', isDeduction: true });
+                    config.afterTotalRows.push({ label: 'Less: Damage or Late Charges or Security Hold', amount: damagesPaid, color: '#e74c3c', isDeduction: true });
                 }
                 var refundColor = securityRefund >= 0 ? '#27ae60' : '#e74c3c';
-                config.afterTotalRows.push({ label: 'Security Refund after Damage Charges', amount: securityRefund, color: refundColor, isBold: true });
+                config.afterTotalRows.push({ label: 'Security Refund after Damage or Late Charges or Security Hold', amount: securityRefund, color: refundColor, isBold: true });
                 config.footerNote = securityRefund >= 0
                     ? 'Security refund of \u20B9' + securityRefund.toLocaleString('en-IN') + ' to be returned to customer.'
                     : 'Customer owes \u20B9' + Math.abs(securityRefund).toLocaleString('en-IN') + ' towards damage charges.';
@@ -1783,10 +2544,13 @@ function kavipushp_render_invoices_enhanced() {
             var securityDeposit = parseFloat(document.getElementById('security_amount').value) || 0;
             // Show/hide damages paid input (final only)
             var damagesPaidGroup = document.getElementById('damages-paid-group');
+            var secHoldReasonGroup = document.getElementById('security-hold-reason-group');
             if (invoiceType === 'final') {
                 if (damagesPaidGroup) damagesPaidGroup.style.display = 'block';
+                if (secHoldReasonGroup) secHoldReasonGroup.style.display = 'block';
             } else {
                 if (damagesPaidGroup) { damagesPaidGroup.style.display = 'none'; document.getElementById('damages_paid').value = 0; }
+                if (secHoldReasonGroup) { secHoldReasonGroup.style.display = 'none'; document.getElementById('security_hold_reason').value = ''; }
                 kpPaymentStatus = 'all_paid';
             }
             var amountReceived = parseFloat(document.getElementById('amount_received').value) || 0;
@@ -1917,9 +2681,10 @@ function kavipushp_render_invoices_enhanced() {
                 document.getElementById('inv-stylist').style.display = 'none';
             }
 
-            // Set image
-            if (kpSetImage) {
-                document.getElementById('inv-set-image').src = kpSetImage;
+            // Set image — prefer manual upload, fall back to stored inventory image
+            var invSetImg = kpSetImage || (opt.dataset.setImage || '');
+            if (invSetImg) {
+                document.getElementById('inv-set-image').src = invSetImg;
                 document.getElementById('inv-set-image-section').style.display = 'block';
             } else {
                 document.getElementById('inv-set-image-section').style.display = 'none';
@@ -1985,6 +2750,32 @@ function kavipushp_render_invoices_enhanced() {
             if (noteTotalEl) noteTotalEl.textContent = (remaining + secPickup).toLocaleString('en-IN');
         }
 
+        async function createGeneratedInvoicePDF(btn) {
+            var previewEl = document.getElementById('invoice-preview');
+            if (!previewEl || previewEl.style.display === 'none') { alert('Please select a booking first.'); return; }
+            var origHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="dashicons dashicons-update"></i> Generating...';
+            btn.disabled = true;
+            try {
+                var sel = document.getElementById('invoice_booking_select');
+                var opt = sel && sel.options[sel.selectedIndex];
+                var custName = (opt && opt.dataset.name) ? opt.dataset.name.replace(/[^a-z0-9]/gi, '-') : 'invoice';
+                var invType = getSelectedInvoiceType ? getSelectedInvoiceType() : 'invoice';
+                var innerDiv = previewEl.querySelector('div');
+                var target = innerDiv || previewEl;
+                var canvas = await html2canvas(target, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+                var { jsPDF } = window.jspdf;
+                var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                var pageW = pdf.internal.pageSize.getWidth();
+                var pageH = pdf.internal.pageSize.getHeight();
+                var imgH = (canvas.height * pageW) / canvas.width;
+                var finalH = Math.min(imgH, pageH);
+                pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pageW, finalH);
+                pdf.save(invType + '-' + custName + '.pdf');
+            } catch(e) { console.error('PDF error:', e); alert('PDF generation failed: ' + e.message); }
+            btn.innerHTML = origHtml; btn.disabled = false;
+        }
+
         function printGeneratedInvoice() {
             var sel = document.getElementById('invoice_booking_select');
             var opt = sel.options[sel.selectedIndex];
@@ -2009,6 +2800,7 @@ function kavipushp_render_invoices_enhanced() {
 
             var customization = opt.dataset.customization || '';
             var stylist = opt.dataset.stylist || '';
+            var secHoldReasonVal = (document.getElementById('security_hold_reason') ? document.getElementById('security_hold_reason').value : '') || '';
             // Auto-build Set Includes from booking jewelry fields
             var _jewelryLabels = [
                 { key: 'nath',        label: 'Nath' },
@@ -2096,12 +2888,13 @@ function kavipushp_render_invoices_enhanced() {
                 '<p><strong>Pickup:</strong> ' + pickupDate + '</p>' +
                 '<p><strong>Return:</strong> ' + returnDate + '</p></div>' +
                 '</div>' +
-                (kpSetImage ? '<div style="text-align:center;margin:15px 0;"><img src="' + kpSetImage + '" style="max-width:200px;max-height:160px;border:1px solid #ddd;border-radius:6px;"></div>' : '') +
+                ((kpSetImage || opt.dataset.setImage) ? '<div style="text-align:center;margin:15px 0;"><img src="' + (kpSetImage || opt.dataset.setImage) + '" style="max-width:200px;max-height:160px;border:1px solid #ddd;border-radius:6px;"></div>' : '') +
                 (setIncludes ? '<div style="background:#f9f0ff;border:1px solid #e0c8f0;border-radius:6px;padding:12px 15px;margin:10px 0 15px 0;"><strong style="color:#7b4fa6;">Set Includes:</strong> <span style="color:#333;margin-left:6px;">' + setIncludes + '</span></div>' : '') +
                 '<table><thead><tr><th>Item</th><th>Category</th><th>Set Code</th><th style="text-align:right;">Amount</th></tr></thead>' +
                 '<tbody>' + tableRows + '</tbody></table>' +
                 (customization.trim() ? '<div style="background:#fff8e1;border:1px solid #f0e68c;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#c9a86c;">Customization:</strong> ' + customization + '</div>' : '') +
                 (stylist.trim() ? '<div style="background:#f0f7ff;border:1px solid #c8dff8;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#2980b9;">Stylist Who Attended:</strong> ' + stylist + '</div>' : '') +
+                (secHoldReasonVal.trim() ? '<div style="background:#fff3e0;border:1px solid #ffe0b2;border-radius:6px;padding:12px 15px;margin:15px 0;"><strong style="color:#e67e22;">Reasons for Security Hold:</strong> <span style="color:#333;margin-left:6px;">' + secHoldReasonVal + '</span></div>' : '') +
                 (invoiceType === 'booking' ?
                 '<div style="margin:8px 0;padding:10px 12px;border:2px solid #e74c3c;border-radius:6px;background:#fff8f8;">' +
                 '<h5 style="margin:0 0 8px;color:#e74c3c;font-size:12px;font-weight:bold;border-bottom:1px solid #f5c6c6;padding-bottom:5px;">Important to Note Customers</h5>' +
@@ -2117,10 +2910,18 @@ function kavipushp_render_invoices_enhanced() {
                 '<ol style="margin:0;padding-left:16px;font-size:10px;color:#555;line-height:1.6;">' +
                 '<li>Jewellery is rented only for the period mentioned; late return will be charged per day.</li>' +
                 '<li>A refundable security deposit may be collected and returned after condition check.</li>' +
-                '<li>Any damage, loss, or missing parts will be charged as per repair or replacement value.</li>' +
+                '<li>Any damage, loss, or missing parts will be charged as per repair or replacement value mentioned before dispatch in the whatsapp group.</li>' +
                 '<li>Full payment must be made before delivery; advance/booking amount is non-refundable.</li>' +
                 '<li>Customer must provide valid ID proof and is responsible for the safety of the jewellery during the rental period.</li>' +
                 '<li>All disputes are subject to local jurisdiction.</li>' +
+                '<li>There shall be no discount on the rental prices of the set.</li>' +
+                '<li>Rental price does not include customization charges if applicable.</li>' +
+                '<li>Booking amount is neither refundable nor adjustable or transferable in any condition, no exceptions.</li>' +
+                '<li>No excuses like jewellery will be provided by in-laws, in-laws insisting on wearing gold only, wedding postponed or cancelled are entertained.</li>' +
+                '<li>Articles agreed on at the time of booking will only be provided; extra article will be chargeable.</li>' +
+                '<li>Use official number 9977722271 for any query or requirements; no responsibility for any personal number of employee.</li>' +
+                '<li>Rental clarification: First 3 days normal rent of Bridal Set, next 2 days Rs.500 extra (if informed at the time of booking).</li>' +
+                '<li>If the bridal set is not returned within the informed timeline, per day rental charges will be applicable as extra charge.</li>' +
                 '</ol>' +
                 '<p style="margin:6px 0 0;font-size:11px;font-weight:bold;color:#333;">Accepted and Agreed By:</p>' +
                 '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:15px;">' +
@@ -2179,7 +2980,8 @@ function kavipushp_render_invoices_enhanced() {
                 damages_paid: damagesPaid,
                 grand_total: config.grandTotal,
                 customization_notes: opt.dataset.customization || '',
-                stylist_name: opt.dataset.stylist || ''
+                stylist_name: opt.dataset.stylist || '',
+                security_hold_reason: (document.getElementById('security_hold_reason') ? document.getElementById('security_hold_reason').value : '') || ''
             };
 
             var msgDiv = document.getElementById('invoice-save-msg');
@@ -2259,7 +3061,9 @@ function kavipushp_render_invoices_enhanced() {
                             <th><?php _e('Type', 'kavipushp-bridals'); ?></th>
                             <th><?php _e('Customer', 'kavipushp-bridals'); ?></th>
                             <th><?php _e('Phone', 'kavipushp-bridals'); ?></th>
-                            <th><?php _e('Grand Total', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Bridal Set Rent', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Damages or Late Charges', 'kavipushp-bridals'); ?></th>
+                            <th><?php _e('Security Refund', 'kavipushp-bridals'); ?></th>
                             <th><?php _e('Date', 'kavipushp-bridals'); ?></th>
                             <th><?php _e('Action', 'kavipushp-bridals'); ?></th>
                         </tr>
@@ -2277,7 +3081,12 @@ function kavipushp_render_invoices_enhanced() {
                             <td><span style="background:<?php echo $type_color; ?>; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px;"><?php echo esc_html($type_label); ?></span></td>
                             <td><?php echo esc_html($inv->customer_name); ?></td>
                             <td><?php echo esc_html($inv->customer_phone); ?></td>
-                            <td><strong>₹<?php echo number_format($inv->grand_total); ?></strong></td>
+                            <td><strong>₹<?php echo number_format($inv->rent_amount); ?></strong></td>
+                            <td><?php if ($inv->invoice_type === 'final'): ?><strong style="color:#e74c3c;">₹<?php echo number_format($inv->damages_paid); ?></strong><?php else: ?>-<?php endif; ?></td>
+                            <td><?php if ($inv->invoice_type === 'final'):
+                                $sec_refund = floatval($inv->security_deposit) - floatval($inv->damages_paid);
+                                $refund_color = $sec_refund >= 0 ? '#27ae60' : '#e74c3c';
+                            ?><strong style="color:<?php echo $refund_color; ?>;">₹<?php echo number_format($sec_refund); ?></strong><?php else: ?>-<?php endif; ?></td>
                             <td><?php echo date('d/m/Y', strtotime($inv->created_at)); ?></td>
                             <td>
                                 <a href="<?php echo admin_url('admin.php?page=kavipushp-invoices&action=view_saved&id=' . $inv->id); ?>" class="button button-small"><?php _e('View', 'kavipushp-bridals'); ?></a>
@@ -2825,3 +3634,582 @@ function kavipushp_update_customers_table() {
     dbDelta($sql);
 }
 add_action('after_switch_theme', 'kavipushp_update_customers_table');
+
+/**
+ * All Products page — table view with image, matching CSV columns
+ */
+function kavipushp_render_all_products() {
+    // Handle inline image upload (same AJAX as inventory page uses)
+    $sets = get_posts(array(
+        'post_type'      => 'bridal_set',
+        'post_status'    => 'publish',
+        'posts_per_page' => -1,
+    ));
+
+    // Sort by numeric part of _set_id ascending
+    usort($sets, function($a, $b) {
+        $ia = intval(preg_replace('/[^0-9]/', '', get_post_meta($a->ID, '_set_id', true) ?: '999999'));
+        $ib = intval(preg_replace('/[^0-9]/', '', get_post_meta($b->ID, '_set_id', true) ?: '999999'));
+        return $ia - $ib;
+    });
+
+    $total = count($sets);
+    ?>
+    <div class="kavipushp-admin-wrap">
+        <div class="kp-admin-header">
+            <div class="kp-user-info">
+                <i class="dashicons dashicons-admin-users"></i>
+                <span><?php echo esc_html(wp_get_current_user()->user_email); ?></span>
+            </div>
+            <a href="<?php echo wp_logout_url(admin_url()); ?>" class="kp-logout-btn">
+                <i class="dashicons dashicons-exit"></i> <?php _e('Logout', 'kavipushp-bridals'); ?>
+            </a>
+        </div>
+
+        <div class="kp-page-title" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+                <h1><?php _e('All Products', 'kavipushp-bridals'); ?></h1>
+                <p><?php printf(__('%d jewelry items in inventory', 'kavipushp-bridals'), $total); ?></p>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+                <a href="<?php echo admin_url('admin.php?page=kavipushp-inventory'); ?>" class="button">
+                    <i class="dashicons dashicons-grid-view"></i> <?php _e('Card View', 'kavipushp-bridals'); ?>
+                </a>
+                <button class="button" onclick="kpApPrint()">
+                    <i class="dashicons dashicons-printer"></i> <?php _e('Print', 'kavipushp-bridals'); ?>
+                </button>
+                <button class="button" onclick="kpApExportCSV()">
+                    <i class="dashicons dashicons-download"></i> <?php _e('Export CSV', 'kavipushp-bridals'); ?>
+                </button>
+            </div>
+        </div>
+
+        <div class="kp-card">
+            <div class="kp-card-body" style="padding:0;">
+
+                <!-- Search + filter bar -->
+                <div style="padding:14px 18px;border-bottom:1px solid #ede8f5;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#faf7ff;">
+                    <input type="text" id="kp-ap-search" placeholder="Search by name, barcode, category..."
+                        style="flex:1;min-width:220px;padding:8px 12px;border:1px solid #d0b8e8;border-radius:6px;font-size:13px;">
+                    <select id="kp-ap-cat-filter" style="padding:8px 10px;border:1px solid #d0b8e8;border-radius:6px;font-size:13px;background:#fff;">
+                        <option value=""><?php _e('All Categories', 'kavipushp-bridals'); ?></option>
+                        <?php
+                        $cats = get_terms(array('taxonomy' => 'bridal_category', 'hide_empty' => false));
+                        if ($cats && !is_wp_error($cats)):
+                            foreach ($cats as $cat): ?>
+                        <option value="<?php echo esc_attr(strtolower($cat->name)); ?>"><?php echo esc_html($cat->name); ?></option>
+                        <?php endforeach; endif; ?>
+                    </select>
+                    <span id="kp-ap-count" style="font-size:13px;color:#8e44ad;font-weight:600;"><?php echo $total; ?> items</span>
+                </div>
+
+                <!-- Products Table -->
+                <div style="overflow-x:auto;">
+                <table id="kp-ap-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <thead>
+                        <tr style="background:linear-gradient(135deg,#8e44ad,#6c3483);color:#fff;text-align:left;">
+                            <th style="padding:12px 10px;width:80px;text-align:center;">Image</th>
+                            <th style="padding:12px 10px;width:50px;">#</th>
+                            <th style="padding:12px 10px;cursor:pointer;" onclick="kpApSort('code')">Item No <span class="kp-ap-sort-icon">&#8597;</span></th>
+                            <th style="padding:12px 10px;cursor:pointer;" onclick="kpApSort('name')">Item Name <span class="kp-ap-sort-icon">&#8597;</span></th>
+                            <th style="padding:12px 10px;cursor:pointer;" onclick="kpApSort('cat')">Category <span class="kp-ap-sort-icon">&#8597;</span></th>
+                            <th style="padding:12px 10px;cursor:pointer;text-align:right;" onclick="kpApSort('price')">Rental Price <span class="kp-ap-sort-icon">&#8597;</span></th>
+                            <th style="padding:12px 10px;text-align:center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="kp-ap-tbody">
+                    <?php
+                    $sno = 0;
+                    foreach ($sets as $set):
+                        $sno++;
+                        $set_code     = get_post_meta($set->ID, '_set_id', true) ?: ('KP' . $set->ID);
+                        $rental_price = (float) get_post_meta($set->ID, '_rental_price', true);
+                        $cats         = get_the_terms($set->ID, 'bridal_category');
+                        $cat_name     = ($cats && !is_wp_error($cats)) ? $cats[0]->name : 'Uncategorized';
+
+                        // Image: options store first (survives deploys)
+                        $img_url = get_option('kp_setimg_' . sanitize_key($set_code), '');
+                        if (!$img_url) {
+                            $thumb_id = get_post_thumbnail_id($set->ID);
+                            if ($thumb_id) {
+                                $img_url = wp_get_attachment_image_url($thumb_id, 'thumbnail');
+                                if (!$img_url) $img_url = wp_get_attachment_url($thumb_id);
+                            }
+                        }
+
+                        $row_bg = ($sno % 2 === 0) ? '#faf7ff' : '#fff';
+                    ?>
+                    <tr class="kp-ap-row"
+                        data-name="<?php echo esc_attr(strtolower($set->post_title)); ?>"
+                        data-code="<?php echo esc_attr(strtolower($set_code)); ?>"
+                        data-cat="<?php echo esc_attr(strtolower($cat_name)); ?>"
+                        data-price="<?php echo esc_attr($rental_price); ?>"
+                        style="background:<?php echo $row_bg; ?>;border-bottom:1px solid #ede8f5;transition:background 0.15s;"
+                        onmouseenter="this.style.background='#f3eeff'" onmouseleave="this.style.background='<?php echo $row_bg; ?>'">
+
+                        <!-- Image cell — click to change photo -->
+                        <td style="padding:8px 10px;text-align:center;vertical-align:middle;">
+                            <div class="kp-ap-img-cell" data-post-id="<?php echo $set->ID; ?>" style="position:relative;display:inline-block;cursor:pointer;" onclick="kpApTriggerUpload(<?php echo $set->ID; ?>)" title="Click to change photo">
+                                <?php if ($img_url): ?>
+                                <img src="<?php echo esc_attr($img_url); ?>" alt=""
+                                    style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:2px solid #d0b8e8;display:block;">
+                                <?php else: ?>
+                                <div style="width:60px;height:60px;border-radius:6px;border:2px dashed #d0b8e8;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f8f3ff;color:#b8a0d0;font-size:10px;gap:2px;">
+                                    <span class="dashicons dashicons-camera" style="font-size:18px;width:18px;height:18px;"></span>
+                                    <span>Add</span>
+                                </div>
+                                <?php endif; ?>
+                                <div style="position:absolute;inset:0;border-radius:6px;background:rgba(142,68,173,0.7);display:none;align-items:center;justify-content:center;" class="kp-ap-img-hover">
+                                    <span class="dashicons dashicons-camera" style="color:#fff;font-size:20px;width:20px;height:20px;"></span>
+                                </div>
+                                <input type="file" id="kp-ap-img-<?php echo $set->ID; ?>" accept="image/*" style="display:none;" onchange="kpApUploadImage(<?php echo $set->ID; ?>, this)">
+                            </div>
+                        </td>
+
+                        <td style="padding:8px 10px;color:#999;vertical-align:middle;"><?php echo $sno; ?></td>
+                        <td style="padding:8px 10px;font-weight:600;color:#8e44ad;vertical-align:middle;"><?php echo esc_html($set_code); ?></td>
+                        <td style="padding:8px 10px;font-weight:500;vertical-align:middle;"><?php echo esc_html($set->post_title); ?></td>
+                        <td style="padding:8px 10px;vertical-align:middle;">
+                            <span style="background:#f3eeff;color:#6c3483;border-radius:12px;padding:3px 10px;font-size:12px;"><?php echo esc_html($cat_name); ?></span>
+                        </td>
+                        <td style="padding:8px 10px;text-align:right;vertical-align:middle;">
+                            <?php if ($rental_price > 0): ?>
+                            <span style="font-weight:700;color:#27ae60;font-size:14px;">&#8377;<?php echo number_format($rental_price); ?></span>
+                            <span style="font-size:11px;color:#999;">/day</span>
+                            <?php else: ?>
+                            <span style="color:#ccc;font-size:12px;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:8px 10px;text-align:center;vertical-align:middle;">
+                            <a href="<?php echo get_edit_post_link($set->ID); ?>" class="button button-small" title="Edit" style="padding:3px 8px;">
+                                <i class="dashicons dashicons-edit" style="font-size:13px;width:13px;height:13px;margin:0;vertical-align:middle;"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div><!-- /overflow-x -->
+
+                <?php if (empty($sets)): ?>
+                <div class="kp-empty-state">
+                    <i class="dashicons dashicons-archive"></i>
+                    <h3><?php _e('No products yet', 'kavipushp-bridals'); ?></h3>
+                    <p><?php _e('Upload a CSV on the Inventory page to get started', 'kavipushp-bridals'); ?></p>
+                </div>
+                <?php endif; ?>
+
+            </div><!-- /kp-card-body -->
+        </div><!-- /kp-card -->
+    </div><!-- /kavipushp-admin-wrap -->
+
+    <style>
+    #kp-ap-table thead th { white-space:nowrap; }
+    .kp-ap-img-cell:hover .kp-ap-img-hover { display:flex !important; }
+    @media print {
+        .kp-admin-header, .kp-page-title .button, #kp-ap-search, #kp-ap-cat-filter,
+        #kp-ap-count, .button, .kp-logout-btn { display:none !important; }
+        #kp-ap-table { font-size:11px; }
+        #kp-ap-table td, #kp-ap-table th { padding:5px 6px !important; }
+        .kp-ap-img-cell img { width:40px !important; height:40px !important; }
+    }
+    </style>
+
+    <script>
+    var kpApNonce = '<?php echo wp_create_nonce("kp_set_image"); ?>';
+    var kpApRows  = null; // cached NodeList
+
+    // ── Search + Category filter ───────────────────────────────────────────────
+    function kpApFilter() {
+        var q   = document.getElementById('kp-ap-search').value.toLowerCase().trim();
+        var cat = document.getElementById('kp-ap-cat-filter').value.toLowerCase().trim();
+        var rows = document.querySelectorAll('#kp-ap-tbody .kp-ap-row');
+        var visible = 0;
+        rows.forEach(function(row) {
+            var nameMatch = !q || row.dataset.name.includes(q) || row.dataset.code.includes(q) || row.dataset.cat.includes(q);
+            var catMatch  = !cat || row.dataset.cat.includes(cat);
+            var show = nameMatch && catMatch;
+            row.style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+        document.getElementById('kp-ap-count').textContent = visible + ' items';
+    }
+    document.getElementById('kp-ap-search').addEventListener('input', kpApFilter);
+    document.getElementById('kp-ap-cat-filter').addEventListener('change', kpApFilter);
+
+    // ── Column sort ───────────────────────────────────────────────────────────
+    var kpApSortState = { col: null, asc: true };
+    function kpApSort(col) {
+        var asc = (kpApSortState.col === col) ? !kpApSortState.asc : true;
+        kpApSortState = { col: col, asc: asc };
+        var tbody = document.getElementById('kp-ap-tbody');
+        var rows  = Array.from(tbody.querySelectorAll('.kp-ap-row'));
+        rows.sort(function(a, b) {
+            var va = a.dataset[col] || '';
+            var vb = b.dataset[col] || '';
+            if (col === 'price') { va = parseFloat(va)||0; vb = parseFloat(vb)||0; return asc ? va-vb : vb-va; }
+            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
+        // re-stripe
+        var vis = 0;
+        tbody.querySelectorAll('.kp-ap-row').forEach(function(r) {
+            if (r.style.display !== 'none') { vis++; r.style.background = vis%2===0?'#faf7ff':'#fff'; }
+        });
+    }
+
+    // ── Image upload (per row) ─────────────────────────────────────────────────
+    function kpApTriggerUpload(postId) {
+        document.getElementById('kp-ap-img-' + postId).click();
+    }
+
+    function kpApUploadImage(postId, input) {
+        if (!input.files || !input.files[0]) return;
+        var cell = input.closest('.kp-ap-img-cell');
+        cell.style.opacity = '0.5';
+        var fd = new FormData();
+        fd.append('action', 'kavipushp_upload_set_image');
+        fd.append('_wpnonce', kpApNonce);
+        fd.append('post_id', postId);
+        fd.append('image', input.files[0]);
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', ajaxurl);
+        xhr.onload = function() {
+            cell.style.opacity = '1';
+            input.value = '';
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res.success) {
+                    var existing = cell.querySelector('img');
+                    var placeholder = cell.querySelector('div[style*="dashed"]');
+                    if (placeholder) placeholder.remove();
+                    if (existing) {
+                        existing.src = res.data.url;
+                    } else {
+                        var img = document.createElement('img');
+                        img.src = res.data.url;
+                        img.alt = '';
+                        img.style.cssText = 'width:60px;height:60px;object-fit:cover;border-radius:6px;border:2px solid #d0b8e8;display:block;';
+                        cell.insertBefore(img, cell.querySelector('.kp-ap-img-hover'));
+                    }
+                }
+            } catch(e) {}
+        };
+        xhr.onerror = function() { cell.style.opacity = '1'; };
+        xhr.send(fd);
+    }
+
+    // ── Print ──────────────────────────────────────────────────────────────────
+    function kpApPrint() { window.print(); }
+
+    // ── Export CSV ─────────────────────────────────────────────────────────────
+    function kpApExportCSV() {
+        var rows = document.querySelectorAll('#kp-ap-tbody .kp-ap-row');
+        var csv  = 'S.No,Item No,Item Name,Category,Rental Price\n';
+        var sno  = 0;
+        rows.forEach(function(row) {
+            if (row.style.display === 'none') return;
+            sno++;
+            var cols = row.querySelectorAll('td');
+            var code  = (row.dataset.code || '').replace(/,/g, '');
+            var name  = ((cols[3] && cols[3].textContent) || '').trim().replace(/,/g, '');
+            var cat   = (row.dataset.cat || '').replace(/,/g, '');
+            var price = row.dataset.price || '0';
+            csv += sno + ',"' + code + '","' + name + '","' + cat + '",' + price + '\n';
+        });
+        var blob = new Blob([csv], { type: 'text/csv' });
+        var a    = document.createElement('a');
+        a.href   = URL.createObjectURL(blob);
+        a.download = 'kavipushp-products.csv';
+        a.click();
+    }
+    </script>
+    <?php
+}
+
+/**
+ * Booked Sets & Dates page
+ */
+function kavipushp_render_booked_sets() {
+    // Fetch all bookings
+    $bookings = get_posts(array(
+        'post_type'      => 'booking',
+        'post_status'    => 'publish',
+        'posts_per_page' => -1,
+        'orderby'        => 'meta_value',
+        'meta_key'       => '_function_date',
+        'order'          => 'ASC',
+    ));
+
+    // Build rows: one row per booking
+    $rows = array();
+    foreach ($bookings as $booking) {
+        $set_id       = get_post_meta($booking->ID, '_bridal_set_id', true);
+        $set          = $set_id ? get_post($set_id) : null;
+        $set_code     = $set_id ? get_post_meta($set_id, '_set_id', true) : '';
+        $rental_price = $set_id ? (float) get_post_meta($set_id, '_rental_price', true) : 0;
+        $pickup_date  = get_post_meta($booking->ID, '_pickup_date', true);
+        $function_date= get_post_meta($booking->ID, '_function_date', true);
+        $return_date  = get_post_meta($booking->ID, '_return_date', true);
+
+        // Available From = return_date + 1 day
+        $available_from = '';
+        if ($return_date) {
+            try {
+                $d = new DateTime($return_date);
+                $d->modify('+1 day');
+                $available_from = $d->format('Y-m-d');
+            } catch (Exception $e) {}
+        }
+
+        // Category
+        $cat_terms = $set_id ? get_the_terms($set_id, 'bridal_category') : false;
+        $category  = ($cat_terms && !is_wp_error($cat_terms)) ? $cat_terms[0]->name : '—';
+
+        // Image
+        $img_url = $set_code ? get_option('kp_setimg_' . sanitize_key($set_code), '') : '';
+        if (!$img_url && $set_id) {
+            $tid = get_post_thumbnail_id($set_id);
+            if ($tid) $img_url = wp_get_attachment_image_url($tid, 'thumbnail') ?: wp_get_attachment_url($tid);
+        }
+
+        $rows[] = array(
+            'booking_id'     => $booking->ID,
+            'set_name'       => $set ? $set->post_title : '—',
+            'set_code'       => $set_code ?: ('KP' . $set_id),
+            'category'       => $category,
+            'price'          => $rental_price,
+            'img_url'        => $img_url,
+            'pickup_date'    => $pickup_date,
+            'function_date'  => $function_date,
+            'return_date'    => $return_date,
+            'available_from' => $available_from,
+        );
+    }
+
+    $total = count($rows);
+    ?>
+    <div class="kavipushp-admin-wrap">
+        <div class="kp-admin-header">
+            <div class="kp-user-info">
+                <i class="dashicons dashicons-admin-users"></i>
+                <span><?php echo esc_html(wp_get_current_user()->user_email); ?></span>
+            </div>
+            <a href="<?php echo wp_logout_url(admin_url()); ?>" class="kp-logout-btn">
+                <i class="dashicons dashicons-exit"></i> Logout
+            </a>
+        </div>
+
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+            <div>
+                <h1 style="font-size:22px;margin:0 0 4px;">Booked Sets &amp; Dates</h1>
+                <p style="margin:0;color:#888;font-size:13px;"><?php echo $total; ?> active bookings</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="button" onclick="kpBsdPrint()"><i class="dashicons dashicons-printer"></i> Print</button>
+                <button class="button" onclick="kpBsdExport()"><i class="dashicons dashicons-download"></i> Export CSV</button>
+            </div>
+        </div>
+
+        <!-- Filter bar -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;background:#faf7ff;padding:12px 16px;border-radius:8px;border:1px solid #e0d0f5;">
+            <input type="text" id="kp-bsd-search" placeholder="Search by Item No, name, category..."
+                style="flex:1;min-width:200px;padding:8px 12px;border:1px solid #d0b8e8;border-radius:6px;font-size:13px;">
+            <select id="kp-bsd-cat" style="padding:8px 10px;border:1px solid #d0b8e8;border-radius:6px;font-size:13px;background:#fff;">
+                <option value="">All Categories</option>
+                <?php
+                $cats = get_terms(array('taxonomy' => 'bridal_category', 'hide_empty' => false));
+                if ($cats && !is_wp_error($cats)):
+                    foreach ($cats as $c): ?>
+                <option value="<?php echo esc_attr(strtolower($c->name)); ?>"><?php echo esc_html($c->name); ?></option>
+                <?php endforeach; endif; ?>
+            </select>
+            <input type="date" id="kp-bsd-date-from" title="Function date from" style="padding:7px 10px;border:1px solid #d0b8e8;border-radius:6px;font-size:13px;">
+            <input type="date" id="kp-bsd-date-to" title="Function date to" style="padding:7px 10px;border:1px solid #d0b8e8;border-radius:6px;font-size:13px;">
+            <span id="kp-bsd-count" style="font-size:13px;font-weight:600;color:#8e44ad;"><?php echo $total; ?> items</span>
+        </div>
+
+        <!-- Table -->
+        <div style="overflow-x:auto;border-radius:10px;border:1px solid #e0d0f5;box-shadow:0 2px 8px rgba(142,68,173,0.07);">
+        <table id="kp-bsd-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="background:linear-gradient(135deg,#8e44ad,#6c3483);color:#fff;text-align:left;">
+                    <th style="padding:12px 10px;width:42px;">#</th>
+                    <th style="padding:12px 10px;width:70px;text-align:center;">Image</th>
+                    <th style="padding:12px 10px;white-space:nowrap;cursor:pointer;" onclick="kpBsdSort('code')">Item No &#8597;</th>
+                    <th style="padding:12px 10px;cursor:pointer;" onclick="kpBsdSort('cat')">Category &#8597;</th>
+                    <th style="padding:12px 10px;text-align:right;white-space:nowrap;cursor:pointer;" onclick="kpBsdSort('price')">Price &#8597;</th>
+                    <th style="padding:12px 10px;white-space:nowrap;cursor:pointer;" onclick="kpBsdSort('pickup')">Pickup Date &#8597;</th>
+                    <th style="padding:12px 10px;white-space:nowrap;cursor:pointer;" onclick="kpBsdSort('func')">Function Date &#8597;</th>
+                    <th style="padding:12px 10px;white-space:nowrap;cursor:pointer;" onclick="kpBsdSort('ret')">Return Date &#8597;</th>
+                    <th style="padding:12px 10px;white-space:nowrap;cursor:pointer;" onclick="kpBsdSort('avail')">Available From &#8597;</th>
+                </tr>
+            </thead>
+            <tbody id="kp-bsd-tbody">
+            <?php
+            $sno = 0;
+            foreach ($rows as $row):
+                $sno++;
+                $bg = ($sno % 2 === 0) ? '#faf7ff' : '#fff';
+
+                // Format dates for display
+                $fmt = function($d) { return $d ? date('d/m/Y', strtotime($d)) : '—'; };
+
+                // Highlight: if available_from is today or past → green, future → normal
+                $avail_class = '';
+                if ($row['available_from']) {
+                    $avail_class = (strtotime($row['available_from']) <= strtotime('today')) ? 'color:#27ae60;font-weight:700;' : 'color:#e67e22;font-weight:600;';
+                }
+            ?>
+            <tr class="kp-bsd-row"
+                data-code="<?php echo esc_attr(strtolower($row['set_code'])); ?>"
+                data-name="<?php echo esc_attr(strtolower($row['set_name'])); ?>"
+                data-cat="<?php echo esc_attr(strtolower($row['category'])); ?>"
+                data-price="<?php echo esc_attr($row['price']); ?>"
+                data-pickup="<?php echo esc_attr($row['pickup_date']); ?>"
+                data-func="<?php echo esc_attr($row['function_date']); ?>"
+                data-ret="<?php echo esc_attr($row['return_date']); ?>"
+                data-avail="<?php echo esc_attr($row['available_from']); ?>"
+                style="background:<?php echo $bg; ?>;border-bottom:1px solid #ede8f5;"
+                onmouseenter="this.style.background='#f3eeff'" onmouseleave="this.style.background='<?php echo $bg; ?>'">
+
+                <td style="padding:8px 10px;color:#aaa;text-align:center;vertical-align:middle;"><?php echo $sno; ?></td>
+
+                <td style="padding:6px 10px;text-align:center;vertical-align:middle;">
+                    <?php if ($row['img_url']): ?>
+                    <img src="<?php echo esc_attr($row['img_url']); ?>" alt=""
+                        style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:2px solid #d0b8e8;">
+                    <?php else: ?>
+                    <div style="width:56px;height:56px;border-radius:6px;border:2px dashed #d0b8e8;display:inline-flex;align-items:center;justify-content:center;background:#f8f3ff;">
+                        <span class="dashicons dashicons-format-image" style="color:#d0b8e8;font-size:20px;width:20px;height:20px;"></span>
+                    </div>
+                    <?php endif; ?>
+                </td>
+
+                <td style="padding:8px 10px;vertical-align:middle;">
+                    <strong style="color:#8e44ad;"><?php echo esc_html($row['set_code']); ?></strong><br>
+                    <span style="font-size:11px;color:#999;"><?php echo esc_html($row['set_name']); ?></span>
+                </td>
+
+                <td style="padding:8px 10px;vertical-align:middle;">
+                    <span style="background:#f3eeff;color:#6c3483;border-radius:12px;padding:3px 10px;font-size:12px;white-space:nowrap;"><?php echo esc_html($row['category']); ?></span>
+                </td>
+
+                <td style="padding:8px 10px;text-align:right;vertical-align:middle;white-space:nowrap;">
+                    <?php if ($row['price'] > 0): ?>
+                    <strong style="color:#27ae60;">&#8377;<?php echo number_format($row['price']); ?></strong>
+                    <span style="font-size:11px;color:#aaa;">/day</span>
+                    <?php else: ?>
+                    <span style="color:#ddd;">—</span>
+                    <?php endif; ?>
+                </td>
+
+                <td style="padding:8px 10px;vertical-align:middle;white-space:nowrap;">
+                    <span style="background:#fff3cd;color:#856404;border-radius:5px;padding:3px 8px;font-size:12px;"><?php echo $fmt($row['pickup_date']); ?></span>
+                </td>
+
+                <td style="padding:8px 10px;vertical-align:middle;white-space:nowrap;">
+                    <span style="background:#e8d5f5;color:#6c3483;border-radius:5px;padding:3px 8px;font-size:12px;font-weight:600;"><?php echo $fmt($row['function_date']); ?></span>
+                </td>
+
+                <td style="padding:8px 10px;vertical-align:middle;white-space:nowrap;">
+                    <span style="background:#fde8e8;color:#c0392b;border-radius:5px;padding:3px 8px;font-size:12px;"><?php echo $fmt($row['return_date']); ?></span>
+                </td>
+
+                <td style="padding:8px 10px;vertical-align:middle;white-space:nowrap;">
+                    <span style="<?php echo $avail_class; ?>font-size:13px;"><?php echo $fmt($row['available_from']); ?></span>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        </div>
+
+        <?php if (empty($rows)): ?>
+        <div class="kp-empty-state" style="text-align:center;padding:40px;">
+            <i class="dashicons dashicons-calendar-alt" style="font-size:48px;color:#d0b8e8;"></i>
+            <h3>No bookings yet</h3>
+            <p>Create bookings to see sets and their dates here.</p>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <style>
+    @media print {
+        .kp-admin-header, .kp-logout-btn, button, input, select, #kp-bsd-search, #kp-bsd-cat { display:none !important; }
+        #kp-bsd-table { font-size:11px; }
+        #kp-bsd-table td, #kp-bsd-table th { padding:5px 6px !important; }
+    }
+    </style>
+
+    <script>
+    // ── Filter ────────────────────────────────────────────────────────────────
+    function kpBsdFilter() {
+        var q    = (document.getElementById('kp-bsd-search').value || '').toLowerCase().trim();
+        var cat  = (document.getElementById('kp-bsd-cat').value   || '').toLowerCase().trim();
+        var dFrom = document.getElementById('kp-bsd-date-from').value;
+        var dTo   = document.getElementById('kp-bsd-date-to').value;
+        var rows  = document.querySelectorAll('#kp-bsd-tbody .kp-bsd-row');
+        var vis = 0;
+        rows.forEach(function(r) {
+            var textMatch = !q || r.dataset.code.includes(q) || r.dataset.name.includes(q) || r.dataset.cat.includes(q);
+            var catMatch  = !cat || r.dataset.cat.includes(cat);
+            var fd = r.dataset.func || '';
+            var dateMatch = (!dFrom || fd >= dFrom) && (!dTo || fd <= dTo);
+            var show = textMatch && catMatch && dateMatch;
+            r.style.display = show ? '' : 'none';
+            if (show) vis++;
+        });
+        document.getElementById('kp-bsd-count').textContent = vis + ' items';
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        ['kp-bsd-search','kp-bsd-cat','kp-bsd-date-from','kp-bsd-date-to'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener(el.tagName==='SELECT'?'change':'input', kpBsdFilter);
+        });
+    });
+
+    // ── Sort ──────────────────────────────────────────────────────────────────
+    var kpBsdSortState = { col: null, asc: true };
+    function kpBsdSort(col) {
+        var asc = (kpBsdSortState.col === col) ? !kpBsdSortState.asc : true;
+        kpBsdSortState = { col: col, asc: asc };
+        var tbody = document.getElementById('kp-bsd-tbody');
+        var rows  = Array.from(tbody.querySelectorAll('.kp-bsd-row'));
+        rows.sort(function(a, b) {
+            var va = a.dataset[col] || '', vb = b.dataset[col] || '';
+            if (col === 'price') return asc ? (parseFloat(va)||0)-(parseFloat(vb)||0) : (parseFloat(vb)||0)-(parseFloat(va)||0);
+            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
+        var v = 0;
+        tbody.querySelectorAll('.kp-bsd-row').forEach(function(r) {
+            if (r.style.display !== 'none') { v++; r.style.background = v%2===0?'#faf7ff':'#fff'; }
+        });
+    }
+
+    // ── Print ─────────────────────────────────────────────────────────────────
+    function kpBsdPrint() { window.print(); }
+
+    // ── Export CSV ────────────────────────────────────────────────────────────
+    function kpBsdExport() {
+        var rows = document.querySelectorAll('#kp-bsd-tbody .kp-bsd-row');
+        var csv  = 'S.No,Item No,Category,Price,Pickup Date,Function Date,Return Date,Available From\n';
+        var n = 0;
+        rows.forEach(function(r) {
+            if (r.style.display === 'none') return;
+            n++;
+            var tds = r.querySelectorAll('td');
+            csv += n + ',"' + (r.dataset.code||'') + '","' + (r.dataset.cat||'') + '",'
+                + (r.dataset.price||0) + ',"' + (r.dataset.pickup||'') + '","'
+                + (r.dataset.func||'') + '","' + (r.dataset.ret||'') + '","'
+                + (r.dataset.avail||'') + '"\n';
+        });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+        a.download = 'booked-sets.csv';
+        a.click();
+    }
+    </script>
+    <?php
+}
