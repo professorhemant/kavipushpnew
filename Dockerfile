@@ -45,7 +45,11 @@ RUN { \
     echo 'opcache.max_accelerated_files = 2000'; \
 } > /usr/local/etc/php/conf.d/railway-optimized.ini
 
-# Copy custom WordPress files — v7 (cache bust: forces full rebuild)
+# Force cache invalidation before COPY (change value below to bust cache)
+ARG REBUILD=20260606-v8
+RUN echo "Rebuild stamp: $REBUILD"
+
+# Copy custom WordPress files
 COPY wp-config.php /var/www/html/wp-config.php
 COPY wp-content /var/www/html/wp-content/
 COPY reset-admin.php /var/www/html/reset-admin.php
